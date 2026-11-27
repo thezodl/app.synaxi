@@ -109,12 +109,32 @@ async function syncOne(
   }
 }
 
-/** Fetch a single feed right away (after adding it). Doesn't take the global lease. */
-export async function syncFeed(id: string) {
+/** Opening a feed refreshes it, but not more often than this (repeated clicks are free). */
+const FEED_REFRESH_MIN_INTERVAL = 30_000;
+
+export type FeedSyncResult =
+  { ok: true; added: number; skipped?: "recent" } | { ok: false; error: string };
+
+/**
+ * Fetch a single feed now: after adding it, or when the user opens it. Doesn't take the global
+ * lease. `minIntervalMs` skips feeds fetched very recently.
+ */
+export async function syncFeed(
+  id: string,
+  opts: { minIntervalMs?: number } = {},
+): Promise<FeedSyncResult> {
   await assertKeyMatchesDb();
-  const [feed] = (await listFeedsForSync()).filter((f) => f.id === id);
-  return feed ? syncOne(feed) : { ok: false as const, error: "Feed not found" };
+  const [feed] = await listFeedsForSync(id);
+  if (!feed) return { ok: false, error: "Feed not found" };
+  const min = opts.minIntervalMs ?? 0;
+  if (min && feed.lastFetchedAt && Date.now() - feed.lastFetchedAt.getTime() < min) {
+    return { ok: true, added: 0, skipped: "recent" };
+  }
+  return syncOne(feed);
 }
+
+export const refreshFeedOnOpen = (id: string) =>
+  syncFeed(id, { minIntervalMs: FEED_REFRESH_MIN_INTERVAL });
 
 /** Fetch every followed feed and store new entries. */
 export async function syncAll(opts: { auto?: boolean } = {}): Promise<SyncResult> {

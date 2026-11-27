@@ -216,3 +216,21 @@ export function useSetTypography() {
     onSuccess: (r) => qc.setQueryData(["settings"], r),
   });
 }
+
+/** Refresh one feed when it's opened. Lists refetch only if something was actually fetched. */
+export function useRefreshFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ ok: boolean; added?: number; skipped?: string; error?: string }>(
+        `/api/feeds/${id}/sync`,
+        { method: "POST" },
+      ),
+    onSuccess: (r) => {
+      if (r.skipped) return;
+      if (r.ok && r.added) qc.invalidateQueries({ queryKey: keys.allArticles });
+      // lastError / lastFetchedAt changed either way.
+      qc.invalidateQueries({ queryKey: keys.tree });
+    },
+  });
+}

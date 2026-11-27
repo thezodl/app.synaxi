@@ -74,6 +74,19 @@ Verified 2026-11-27:
   feeds, unfollow keeps bookmarks and re-adding revives the feed, typography clamping.
 - All 10 new routes return 401 without a token.
 
+UX tweaks (after first use):
+
+- The sidebar footer is gone. Import, Export, Keyboard shortcuts and Log out live in a "…" menu next to
+  refresh, and the sync status ("Synced 5m ago · 2 failed") is at the top of that menu and in the refresh
+  tooltip.
+- Opening a feed refreshes just that feed (`POST /api/feeds/:id/sync`, skipped if fetched in the last 30s),
+  with a spinner in the list header.
+- The sidebar is collapsible (button in its header, or `[`), and the state is remembered per browser. Below
+  `lg` it's an overlay drawer opened from the list header, which also fixes narrow windows having no way to
+  reach the sidebar.
+- **Fix:** a 304 Not Modified crashed the fetch path under Node (see the commit), so every feed failed after
+  its first sync. Error labels are now specific (Host not found, TLS error, …).
+
 Still to check in a browser: menus and dialogs, carousel/lightbox on a gallery-heavy post, typography
 changes, the export file opening in another reader.
 

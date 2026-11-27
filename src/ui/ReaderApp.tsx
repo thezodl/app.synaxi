@@ -5,7 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ApiError, download } from "@/client/api";
-import { useArticle, useArticles, useBookmark, useManage, useSync, useTree } from "@/client/hooks";
+import { useIsLarge, usePersistentFlag } from "@/client/useLayout";
+import {
+  useArticle,
+  useArticles,
+  useBookmark,
+  useManage,
+  useRefreshFeed,
+  useSync,
+  useTree,
+} from "@/client/hooks";
 import { isUuid, parseView, viewKey, type View } from "@/core/views";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -62,7 +71,16 @@ export function ReaderApp() {
   const bookmark = useBookmark();
   const sync = useSync();
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar: a column on large screens (remembered), an overlay drawer below `lg`.
+  const isLarge = useIsLarge();
+  const [sidebarPinned, setSidebarPinned] = usePersistentFlag("synaxi.sidebar", true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const toggleSidebar = useCallback(() => {
+    if (isLarge) setSidebarPinned(!sidebarPinned);
+    else setDrawerOpen((o) => !o);
+  }, [isLarge, sidebarPinned, setSidebarPinned]);
+  const sidebarColumn = isLarge && sidebarPinned;
+  const refreshFeed = useRefreshFeed();
   const [importOpen, setImportOpen] = useState(false);
   /** The open management dialog, if any (from the sidebar menus). */
   const [action, setAction] = useState<SidebarAction | null>(null);
@@ -87,7 +105,13 @@ export function ReaderApp() {
     sync.mutate(true);
   }, [sync]);
 
-  const selectView = useCallback((v: View) => navigate({ view: v, article: null }), [navigate]);
+  const selectView = useCallback(
+    (v: View) => {
+      navigate({ view: v, article: null });
+      setDrawerOpen(false);
+    },
+    [navigate],
+  );
   const selectArticle = useCallback((id: string | null) => navigate({ article: id }), [navigate]);
 
   const runSync = useCallback(() => {
@@ -129,6 +153,17 @@ export function ReaderApp() {
         case "import":
           setImportOpen(true);
           return;
+        case "shortcuts":
+          setHelpOpen(true);
+          return;
+        case "collapse":
+          toggleSidebar();
+          return;
+        case "logout":
+          // /auth/logout is handled by the Auth0 SDK in proxy.ts: it needs a full navigation.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign("/auth/logout");
+          return;
         case "export":
           download("/api/opml", "synaxi.opml").catch((e) =>
             toast.error(errorText(e) ?? "Export failed"),
@@ -144,9 +179,16 @@ export function ReaderApp() {
           setAction(a);
       }
     },
-    [manage.updateFeed],
+    [manage.updateFeed, toggleSidebar],
   );
   const dialogsOpen = importOpen || helpOpen || action !== null;
+
+  // Opening a feed refreshes it (server skips it if fetched in the last 30s).
+  const openedFeedId = view.kind === "feed" ? view.id : null;
+  const refreshFeedMutate = refreshFeed.mutate;
+  useEffect(() => {
+    if (openedFeedId) refreshFeedMutate(openedFeedId);
+  }, [openedFeedId, refreshFeedMutate]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -190,7 +232,7 @@ export function ReaderApp() {
           runSync();
           break;
         case "[":
-          setSidebarOpen((s) => !s);
+          toggleSidebar();
           break;
         case "Escape":
           if (articleId) selectArticle(null);
@@ -214,6 +256,7 @@ export function ReaderApp() {
     list,
     dialogsOpen,
     onAction,
+    toggleSidebar,
     selectArticle,
     selectView,
     toggleBookmark,
@@ -242,13 +285,18 @@ export function ReaderApp() {
     <div
       className={cn(
         "grid h-dvh overflow-hidden",
-        sidebarOpen
+        sidebarColumn
           ? "grid-cols-1 lg:grid-cols-[16rem_24rem_minmax(0,1fr)]"
           : "grid-cols-1 lg:grid-cols-[24rem_minmax(0,1fr)]",
       )}
     >
-      {sidebarOpen && (
-        <div className="hidden min-h-0 lg:block">
+      {(sidebarColumn || (!isLarge && drawerOpen)) && (
+        <div
+          className={cn(
+            "min-h-0",
+            !sidebarColumn && "fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] shadow-xl",
+          )}
+        >
           <Sidebar
             tree={tree.data}
             view={view}
@@ -258,6 +306,14 @@ export function ReaderApp() {
             onAction={onAction}
           />
         </div>
+      )}
+      {!isLarge && drawerOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-30 bg-black/40"
+          onClick={() => setDrawerOpen(false)}
+        />
       )}
       {/* Below lg, the reader replaces the list when an article is open. */}
       <div className={cn("min-h-0", articleId && "hidden lg:block")}>
@@ -273,6 +329,8 @@ export function ReaderApp() {
           loadingMore={list.isFetchingNextPage}
           empty={empty}
           notice={feedNotice}
+          refreshing={refreshFeed.isPending || sync.isPending}
+          onShowSidebar={sidebarColumn ? undefined : toggleSidebar}
         />
       </div>
       <div className={cn("min-h-0", !articleId && "hidden lg:block")}>

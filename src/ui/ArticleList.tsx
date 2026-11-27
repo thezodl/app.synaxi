@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark } from "lucide-react";
+import { Bookmark, PanelLeftOpen, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import type { ArticleListItem } from "@/client/hooks";
@@ -83,8 +83,13 @@ export function ArticleList({
   loadingMore,
   empty,
   notice,
+  refreshing,
+  onShowSidebar,
 }: {
   notice?: string | null;
+  refreshing?: boolean;
+  /** Shown when the sidebar is hidden (collapsed, or a drawer on small screens). */
+  onShowSidebar?: () => void;
   title: string;
   items: ArticleListItem[];
   selectedId: string | null;
@@ -109,8 +114,25 @@ export function ArticleList({
 
   return (
     <section className="flex h-full min-w-0 flex-col border-r" aria-label={title}>
-      <header className="flex h-12 shrink-0 items-center border-b px-4">
-        <h2 className="truncate font-semibold">{title}</h2>
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b px-2">
+        {onShowSidebar && (
+          <button
+            type="button"
+            onClick={onShowSidebar}
+            title="Show sidebar ([)"
+            className="hover:bg-muted rounded-md p-1.5"
+          >
+            <PanelLeftOpen className="size-4" />
+            <span className="sr-only">Show sidebar</span>
+          </button>
+        )}
+        <h2 className="min-w-0 flex-1 truncate px-2 font-semibold">{title}</h2>
+        {refreshing && (
+          <RefreshCw
+            className="text-muted-foreground mr-2 size-3.5 animate-spin"
+            aria-label="Refreshing"
+          />
+        )}
       </header>
       {notice && (
         <p role="status" className="bg-destructive/10 text-destructive border-b px-4 py-2 text-xs">

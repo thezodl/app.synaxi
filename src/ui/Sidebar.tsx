@@ -4,7 +4,9 @@ import {
   Bookmark,
   Download,
   FolderPlus,
+  Keyboard,
   MoreHorizontal,
+  PanelLeftClose,
   Plus,
   CalendarDays,
   ChevronRight,
@@ -45,7 +47,10 @@ export type SidebarAction =
   | { kind: "renameFolder"; folder: FolderDto }
   | { kind: "deleteFolder"; folder: FolderDto }
   | { kind: "import" }
-  | { kind: "export" };
+  | { kind: "export" }
+  | { kind: "shortcuts" }
+  | { kind: "logout" }
+  | { kind: "collapse" };
 
 function RowMenu({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -220,21 +225,63 @@ export function Sidebar({
     });
   const isActive = (v: View) => viewKey(v) === viewKey(view);
   const sync = tree?.sync;
+  const syncLabel = sync?.lastFinishedAt
+    ? `Synced ${relativeTime(sync.lastFinishedAt)}${relativeTime(sync.lastFinishedAt) === "now" ? "" : " ago"}`
+    : "Not synced yet";
 
   return (
     <nav className="bg-sidebar text-sidebar-foreground flex h-full flex-col border-r">
-      <div className="flex items-center justify-between px-3 py-3">
-        <span className="font-semibold tracking-tight">Synaxi</span>
+      <div className="flex h-12 shrink-0 items-center gap-0.5 border-b px-2">
+        <button
+          type="button"
+          onClick={() => onAction({ kind: "collapse" })}
+          title="Hide sidebar ([)"
+          className="hover:bg-sidebar-accent rounded-md p-1.5"
+        >
+          <PanelLeftClose className="size-4" />
+          <span className="sr-only">Hide sidebar</span>
+        </button>
+        <span className="flex-1 px-1 font-semibold tracking-tight">Synaxi</span>
         <button
           type="button"
           onClick={onSync}
           disabled={syncing}
-          title="Refresh (r)"
+          title={`Refresh all (r) · ${syncLabel}`}
           className="hover:bg-sidebar-accent rounded-md p-1.5 disabled:opacity-60"
         >
           <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-          <span className="sr-only">Refresh</span>
+          <span className="sr-only">Refresh all</span>
         </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="hover:bg-sidebar-accent data-popup-open:bg-sidebar-accent rounded-md p-1.5"
+            aria-label="Menu"
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="text-muted-foreground px-1.5 py-1 text-xs">
+              {syncLabel}
+              {sync && sync.failedFeeds > 0 && (
+                <span className="text-destructive"> · {sync.failedFeeds} failed</span>
+              )}
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onAction({ kind: "import" })}>
+              <Upload /> Import OPML…
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onAction({ kind: "export" })}>
+              <Download /> Export OPML
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onAction({ kind: "shortcuts" })}>
+              <Keyboard /> Keyboard shortcuts
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onAction({ kind: "logout" })}>
+              <LogOut /> Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
@@ -351,38 +398,6 @@ export function Sidebar({
               onAction={onAction}
             />
           ))}
-      </div>
-
-      <div className="text-muted-foreground space-y-1 border-t px-3 py-2 text-xs">
-        {sync?.lastFinishedAt ? (
-          <p>
-            Synced {relativeTime(sync.lastFinishedAt)} ago
-            {sync.failedFeeds > 0 && (
-              <span className="text-destructive"> · {sync.failedFeeds} failed</span>
-            )}
-          </p>
-        ) : (
-          <p>Not synced yet</p>
-        )}
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          <button
-            type="button"
-            onClick={() => onAction({ kind: "import" })}
-            className="hover:text-foreground flex items-center gap-1"
-          >
-            <Upload className="size-3.5" /> Import
-          </button>
-          <button
-            type="button"
-            onClick={() => onAction({ kind: "export" })}
-            className="hover:text-foreground flex items-center gap-1"
-          >
-            <Download className="size-3.5" /> Export
-          </button>
-          <a href="/auth/logout" className="hover:text-foreground flex items-center gap-1">
-            <LogOut className="size-3.5" /> Log out
-          </a>
-        </div>
       </div>
     </nav>
   );

@@ -49,17 +49,18 @@ export async function listTree(): Promise<{ folders: FolderDto[]; feeds: FeedDto
   };
 }
 
-/** Feeds to sync (followed ones), with what conditional GET needs. */
-export function listFeedsForSync() {
+/** Feeds to sync (followed ones, or just one), with what conditional GET needs. */
+export function listFeedsForSync(onlyId?: string) {
   return db()
     .select({
       id: feeds.id,
       urlEnc: feeds.urlEnc,
       etag: feeds.etag,
       lastModified: feeds.lastModified,
+      lastFetchedAt: feeds.lastFetchedAt,
     })
     .from(feeds)
-    .where(isNull(feeds.removedAt));
+    .where(onlyId ? and(isNull(feeds.removedAt), eq(feeds.id, onlyId)) : isNull(feeds.removedAt));
 }
 
 export async function updateFetchState(

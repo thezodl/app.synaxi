@@ -13,23 +13,24 @@ Last updated: 2026-11-27. Update this file whenever work lands or an open item c
 placeholder Auth0 values gave: `/` → 307 to `/auth/login`; `/api/me` → 401 with no token or a junk one; the
 manifest, SW, offline page and icons → 200 without auth.
 
-## Waiting on the user (one-time setup, see README)
+## Phase 0 verification
 
-1. Auth0 tenant: Regular Web App, API `https://synaxi.app/api`, sign-ups off, **only** the database connection
-   enabled for the app, passkeys on, your user created.
-2. Neon project with `main` + `dev` branches.
-3. Vercel project, `synaxi.app` domain, production env vars.
-4. GitHub Actions secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `DATABASE_URL_UNPOOLED`.
-5. Push `plan` and `phase-0`, open PRs, merge to `main` → first deploy.
+Done (2026-11-27, local):
 
-## Phase 0 checks still to do (need real credentials)
+- One-time setup complete (Auth0, Neon, Vercel env pulled with `vercel env pull`).
+- Logging in locally works, and the home page shows your Auth0 `sub` and `Database ok`. This proves Auth0 issues
+  an RS256 access token for `https://synaxi.app/api` that `requireUser` accepts (spike 2).
+- Setup gotcha (now in the README): the Auth0 API's **Application Access → User Access** must be set to
+  Authorized for the app.
+- The first DB query after idle took about 0.7s: Neon Free scales to zero after ~5 min, and the wake-up is
+  unavoidable on the free tier.
 
-- Log in locally and at https://synaxi.app; the home page shows your `sub` and `Database ok`.
-- `/auth/access-token` returns an RS256 JWT, not JWE or opaque (spike 2).
-- Passkey sign-in on Universal Login works without an Auth0 custom domain.
-- Install the PWA from Chrome desktop, relaunch, and check you're still signed in.
-- Spike 1 (Readability + linkedom in a Vercel function) moves to the start of Phase 1, together with the
-  `src/core` port.
+Still to do:
+
+1. Check which Neon branch `.env.development.local` points at (`dev`, not `main`).
+2. Push `plan` → `main` and `phase-0`, open a PR, merge → first deploy via `deploy.yml`.
+3. Log in at https://synaxi.app, try passkey sign-in, install the PWA from Chrome desktop, relaunch, and check
+   you're still signed in.
 
 ## Next: Phase 1
 

@@ -15,33 +15,33 @@ Feeds come from the same Feedly OPML export (Feedly's API is Enterprise-only, so
 
 ## Confirmed decisions
 
-| Area             | Decision                                                                                                       |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- |
-| Relationship     | Independent data for now; **shared backend later** (API and schema designed for a second client)              |
-| Fetching         | **Server-side** in Vercel functions (no CORS problem, feed URLs never reach the browser)                      |
-| Offline          | **Online-first**. The service worker caches the app shell only                                                 |
-| Codebase         | **New app**; `src/core` **copied** from mobile and allowed to diverge                                          |
-| Framework        | **Next.js App Router**, single app at the repo root                                                            |
-| DB               | **Neon Postgres + Drizzle ORM + drizzle-kit** migrations                                                       |
-| Sync timing      | **On open (debounced 15 min) + manual refresh**. No background fetching                                        |
-| Vercel plan      | **Hobby**. Stay inside free-tier limits                                                                        |
-| Auth             | **Auth0**, **email + password and passkeys**; single user enforced **in Auth0** (sign-ups disabled)            |
-| API auth         | **Bearer only**: every `/api/*` call carries an Auth0 access token, verified with JWKS                         |
-| Data access      | **Client components → `/api/*`** via TanStack Query. Server components only render the shell                   |
-| Feed URL secrets | **App-level AES-256-GCM encryption**; DB holds ciphertext + HMAC for uniqueness                                |
-| Devices          | **Desktop browser** first (it should still work at narrow widths, but isn't optimised for them)               |
-| UI               | **Tailwind + shadcn/ui**; **system light/dark** only (no theme setting)                                        |
-| Reader           | Server-sanitised HTML rendered **inline in a div**, with a strict CSP                                          |
-| Images           | **Loaded directly from the origin** (https-upgraded); no proxy                                                 |
-| IDs              | **UUIDv7** primary keys                                                                                        |
-| Retention        | **14 days** (bookmarks never purged), run by the daily Vercel cron                                             |
-| Bootstrap        | **Upload OPML** through an import screen                                                                       |
-| Tooling          | **bun** (package manager + test runner)                                                                        |
-| Deploys          | **GitHub Actions** deploys to prod with the Vercel CLI. **No PR previews for now**                             |
-| Domain           | **`synaxi.app`** (apex) on Vercel                                                                              |
-| Single-user      | Enforced by the Auth0 tenant alone (sign-ups off). **No `sub` allowlist** in the app                           |
-| View original    | Toggle **extracted ⇄ RSS** content; "Open original" opens the page in a new tab (no iframing)                  |
-| Typography       | Font family (serif/sans/system), font size, line height, max line width. Code blocks stay mono                 |
+| Area             | Decision                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| Relationship     | Independent data for now; **shared backend later** (API and schema designed for a second client)    |
+| Fetching         | **Server-side** in Vercel functions (no CORS problem, feed URLs never reach the browser)            |
+| Offline          | **Online-first**. The service worker caches the app shell only                                      |
+| Codebase         | **New app**; `src/core` **copied** from mobile and allowed to diverge                               |
+| Framework        | **Next.js App Router**, single app at the repo root                                                 |
+| DB               | **Neon Postgres + Drizzle ORM + drizzle-kit** migrations                                            |
+| Sync timing      | **On open (debounced 15 min) + manual refresh**. No background fetching                             |
+| Vercel plan      | **Hobby**. Stay inside free-tier limits                                                             |
+| Auth             | **Auth0**, **email + password and passkeys**; single user enforced **in Auth0** (sign-ups disabled) |
+| API auth         | **Bearer only**: every `/api/*` call carries an Auth0 access token, verified with JWKS              |
+| Data access      | **Client components → `/api/*`** via TanStack Query. Server components only render the shell        |
+| Feed URL secrets | **App-level AES-256-GCM encryption**; DB holds ciphertext + HMAC for uniqueness                     |
+| Devices          | **Desktop browser** first (it should still work at narrow widths, but isn't optimised for them)     |
+| UI               | **Tailwind + shadcn/ui**; **system light/dark** only (no theme setting)                             |
+| Reader           | Server-sanitised HTML rendered **inline in a div**, with a strict CSP                               |
+| Images           | **Loaded directly from the origin** (https-upgraded); no proxy                                      |
+| IDs              | **UUIDv7** primary keys                                                                             |
+| Retention        | **14 days** (bookmarks never purged), run by the daily Vercel cron                                  |
+| Bootstrap        | **Upload OPML** through an import screen                                                            |
+| Tooling          | **bun** (package manager + test runner)                                                             |
+| Deploys          | **GitHub Actions** deploys to prod with the Vercel CLI. **No PR previews for now**                  |
+| Domain           | **`synaxi.app`** (apex) on Vercel                                                                   |
+| Single-user      | Enforced by the Auth0 tenant alone (sign-ups off). **No `sub` allowlist** in the app                |
+| View original    | Toggle **extracted ⇄ RSS** content; "Open original" opens the page in a new tab (no iframing)       |
+| Typography       | Font family (serif/sans/system), font size, line height, max line width. Code blocks stay mono      |
 
 ### v1 feature scope
 
@@ -174,9 +174,11 @@ The mobile `assets` table has no equivalent: images load directly, and nothing i
   `APP_BASE_URL=https://synaxi.app`. One **API** (identifier `https://synaxi.app/api`, RS256, token encryption
   off). A Database connection with **sign-ups disabled** and passkeys enabled; no social connections. Refresh
   tokens with rotation (`offline_access`) so an installed PWA stays signed in.
-- **Browser:** nextjs-auth0 middleware handles `/auth/*` and redirects to login if there's no session. Client code
-  gets an access token through `getAccessToken({ audience })` (the SDK refreshes it) and sends
-  `Authorization: Bearer …` to `/api/*`.
+- **Browser:** `src/proxy.ts` (Next 16's `middleware`) runs the SDK for `/auth/*` and redirects pages to login if
+  there's no session. The API audience is requested **at login** (`authorizationParameters.audience`), so the
+  session's default access token is for our API. Client code calls plain `getAccessToken()` (the SDK refreshes
+  it; no MRRT setup needed) and sends `Authorization: Bearer …` to `/api/*`. Sessions roll, with 7 days of
+  inactivity and 30 days absolute.
 - **API:** every handler starts with `requireUser(req)`, which verifies signature (remote JWKS, cached), `iss`,
   `aud` and `exp`. A 401 makes the client re-run login. The session cookie alone **does not** authorise `/api/*`.
   The mobile app will use exactly the same path later.
@@ -226,7 +228,7 @@ with the Vercel CLI (`vercel pull` → `vercel build` → `vercel deploy --prebu
 
 | Workflow     | Trigger                | Steps                                                                                      |
 | ------------ | ---------------------- | ------------------------------------------------------------------------------------------ |
-| `ci.yml`     | PR, push `main`        | `bun install --frozen-lockfile`, typecheck, lint, prettier check, `bun test`, `next build`  |
+| `ci.yml`     | PR, push `main`        | `bun install --frozen-lockfile`, typecheck, lint, prettier check, `bun test`, `next build` |
 | `deploy.yml` | push `main` (after CI) | `drizzle-kit migrate` against prod → `vercel deploy --prod --prebuilt`                     |
 
 - **No PR previews for now.** PRs are checked by CI only. If previews come back, they need a Neon branch per PR

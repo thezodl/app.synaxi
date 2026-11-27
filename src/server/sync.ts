@@ -75,6 +75,67 @@ export type SyncResult =
   | { status: "skipped"; reason: "recent" | "running"; state: SyncState }
   | { status: "done"; state: SyncState };
 
+type SyncFeed = Awaited<ReturnType<typeof listFeedsForSync>>[number];
+
+/** Fetch one feed (conditional GET) and store new entries. Records the outcome on the feed row. */
+async function syncOne(
+  feed: SyncFeed,
+): Promise<{ ok: true; added: number } | { ok: false; error: string }> {
+  try {
+    const r = await fetchFeed(openUrl(feed.urlEnc), feed.etag, feed.lastModified);
+    if (r.status === "not-modified") {
+      await updateFetchState(feed.id, { error: null });
+      return { ok: true, added: 0 };
+    }
+    let parsed;
+    try {
+      parsed = parseFeed(r.body);
+    } catch {
+      throw new FetchError("Not a feed");
+    }
+    const added = await insertEntries(feed.id, parsed.entries);
+    await updateFetchState(feed.id, {
+      etag: r.etag,
+      lastModified: r.lastModified,
+      siteUrl: parsed.siteUrl,
+      error: null,
+    });
+    return { ok: true, added };
+  } catch (e) {
+    // FetchError messages are URL-free by construction; anything else gets a generic label.
+    const error = e instanceof FetchError ? e.message : "Failed";
+    await updateFetchState(feed.id, { error }).catch(() => undefined);
+    return { ok: false, error };
+  }
+}
+
+/** Opening a feed refreshes it, but not more often than this (repeated clicks are free). */
+const FEED_REFRESH_MIN_INTERVAL = 30_000;
+
+export type FeedSyncResult =
+  { ok: true; added: number; skipped?: "recent" } | { ok: false; error: string };
+
+/**
+ * Fetch a single feed now: after adding it, or when the user opens it. Doesn't take the global
+ * lease. `minIntervalMs` skips feeds fetched very recently.
+ */
+export async function syncFeed(
+  id: string,
+  opts: { minIntervalMs?: number } = {},
+): Promise<FeedSyncResult> {
+  await assertKeyMatchesDb();
+  const [feed] = await listFeedsForSync(id);
+  if (!feed) return { ok: false, error: "Feed not found" };
+  const min = opts.minIntervalMs ?? 0;
+  if (min && feed.lastFetchedAt && Date.now() - feed.lastFetchedAt.getTime() < min) {
+    return { ok: true, added: 0, skipped: "recent" };
+  }
+  return syncOne(feed);
+}
+
+export const refreshFeedOnOpen = (id: string) =>
+  syncFeed(id, { minIntervalMs: FEED_REFRESH_MIN_INTERVAL });
+
 /** Fetch every followed feed and store new entries. */
 export async function syncAll(opts: { auto?: boolean } = {}): Promise<SyncResult> {
   await assertKeyMatchesDb();
@@ -90,32 +151,9 @@ export async function syncAll(opts: { auto?: boolean } = {}): Promise<SyncResult
     let added = 0;
     let failed = 0;
     await mapPool(list, CONCURRENCY, async (feed) => {
-      try {
-        const r = await fetchFeed(openUrl(feed.urlEnc), feed.etag, feed.lastModified);
-        if (r.status === "not-modified") {
-          await updateFetchState(feed.id, { error: null });
-          return;
-        }
-        let parsed;
-        try {
-          parsed = parseFeed(r.body);
-        } catch {
-          throw new FetchError("Not a feed");
-        }
-        added += await insertEntries(feed.id, parsed.entries);
-        await updateFetchState(feed.id, {
-          etag: r.etag,
-          lastModified: r.lastModified,
-          siteUrl: parsed.siteUrl,
-          error: null,
-        });
-      } catch (e) {
-        failed++;
-        // FetchError messages are URL-free by construction; anything else gets a generic label.
-        await updateFetchState(feed.id, {
-          error: e instanceof FetchError ? e.message : "Failed",
-        }).catch(() => undefined);
-      }
+      const r = await syncOne(feed);
+      if (r.ok) added += r.added;
+      else failed++;
     });
     const state: SyncState = {
       lastStartedAt: now,

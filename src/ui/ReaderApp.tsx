@@ -4,8 +4,17 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { ApiError } from "@/client/api";
-import { useArticle, useArticles, useBookmark, useSync, useTree } from "@/client/hooks";
+import { ApiError, download } from "@/client/api";
+import { useIsLarge, usePersistentFlag } from "@/client/useLayout";
+import {
+  useArticle,
+  useArticles,
+  useBookmark,
+  useManage,
+  useRefreshFeed,
+  useSync,
+  useTree,
+} from "@/client/hooks";
 import { isUuid, parseView, viewKey, type View } from "@/core/views";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,7 +23,9 @@ import { ArticleList } from "./ArticleList";
 import { ImportDialog } from "./ImportDialog";
 import { Reader } from "./Reader";
 import { ShortcutsDialog } from "./ShortcutsDialog";
-import { orderedViews, Sidebar, viewTitle } from "./Sidebar";
+import { AddFeedDialog } from "./AddFeedDialog";
+import { ConfirmDialog, PromptDialog } from "./dialogs";
+import { orderedViews, Sidebar, viewTitle, type SidebarAction } from "./Sidebar";
 
 const errorText = (e: unknown) =>
   e instanceof ApiError ? e.message : e ? "Something went wrong" : null;
@@ -60,8 +71,20 @@ export function ReaderApp() {
   const bookmark = useBookmark();
   const sync = useSync();
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar: a column on large screens (remembered), an overlay drawer below `lg`.
+  const isLarge = useIsLarge();
+  const [sidebarPinned, setSidebarPinned] = usePersistentFlag("synaxi.sidebar", true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const toggleSidebar = useCallback(() => {
+    if (isLarge) setSidebarPinned(!sidebarPinned);
+    else setDrawerOpen((o) => !o);
+  }, [isLarge, sidebarPinned, setSidebarPinned]);
+  const sidebarColumn = isLarge && sidebarPinned;
+  const refreshFeed = useRefreshFeed();
   const [importOpen, setImportOpen] = useState(false);
+  /** The open management dialog, if any (from the sidebar menus). */
+  const [action, setAction] = useState<SidebarAction | null>(null);
+  const manage = useManage();
   const [helpOpen, setHelpOpen] = useState(false);
   // "Feed version" toggle, remembered per article so it resets when the article changes.
   const [altFor, setAltFor] = useState<string | null>(null);
@@ -82,7 +105,13 @@ export function ReaderApp() {
     sync.mutate(true);
   }, [sync]);
 
-  const selectView = useCallback((v: View) => navigate({ view: v, article: null }), [navigate]);
+  const selectView = useCallback(
+    (v: View) => {
+      navigate({ view: v, article: null });
+      setDrawerOpen(false);
+    },
+    [navigate],
+  );
   const selectArticle = useCallback((id: string | null) => navigate({ article: id }), [navigate]);
 
   const runSync = useCallback(() => {
@@ -118,10 +147,55 @@ export function ReaderApp() {
     });
   }, [article.data, bookmark]);
 
+  const onAction = useCallback(
+    (a: SidebarAction) => {
+      switch (a.kind) {
+        case "import":
+          setImportOpen(true);
+          return;
+        case "shortcuts":
+          setHelpOpen(true);
+          return;
+        case "collapse":
+          toggleSidebar();
+          return;
+        case "logout":
+          // /auth/logout is handled by the Auth0 SDK in proxy.ts: it needs a full navigation.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign("/auth/logout");
+          return;
+        case "export":
+          download("/api/opml", "synaxi.opml").catch((e) =>
+            toast.error(errorText(e) ?? "Export failed"),
+          );
+          return;
+        case "moveFeed":
+          manage.updateFeed.mutate(
+            { id: a.feed.id, folderId: a.folderId },
+            { onError: (e) => toast.error(errorText(e) ?? "Couldn't move the feed") },
+          );
+          return;
+        default:
+          setAction(a);
+      }
+    },
+    [manage.updateFeed, toggleSidebar],
+  );
+  const dialogsOpen = importOpen || helpOpen || action !== null;
+
+  // Opening a feed refreshes it (server skips it if fetched in the last 30s).
+  const openedFeedId = view.kind === "feed" ? view.id : null;
+  const refreshFeedMutate = refreshFeed.mutate;
+  useEffect(() => {
+    if (openedFeedId) refreshFeedMutate(openedFeedId);
+  }, [openedFeedId, refreshFeedMutate]);
+
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e) || importOpen || helpOpen) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e) || dialogsOpen) return;
+      // Let open menus/popovers (Base UI) handle their own keys.
+      if (document.querySelector("[data-open][role=menu], [data-open][role=dialog]")) return;
       const idx = items.findIndex((a) => a.id === articleId);
       const step = (d: number) => {
         const next = items[idx < 0 ? 0 : Math.min(items.length - 1, Math.max(0, idx + d))];
@@ -151,11 +225,14 @@ export function ReaderApp() {
         case "v":
           if (article.data?.altHtml) toggleAlt();
           break;
+        case "a":
+          onAction({ kind: "addFeed", folderId: view.kind === "folder" ? view.id : null });
+          break;
         case "r":
           runSync();
           break;
         case "[":
-          setSidebarOpen((s) => !s);
+          toggleSidebar();
           break;
         case "Escape":
           if (articleId) selectArticle(null);
@@ -177,8 +254,9 @@ export function ReaderApp() {
     view,
     article.data,
     list,
-    importOpen,
-    helpOpen,
+    dialogsOpen,
+    onAction,
+    toggleSidebar,
     selectArticle,
     selectView,
     toggleBookmark,
@@ -187,6 +265,11 @@ export function ReaderApp() {
   ]);
 
   const noFeeds = tree.data && tree.data.feeds.length === 0;
+  const currentFeed =
+    view.kind === "feed" ? tree.data?.feeds.find((f) => f.id === view.id) : undefined;
+  const feedNotice = currentFeed?.lastError
+    ? `Last fetch failed: ${currentFeed.lastError}. Showing what was fetched before.`
+    : null;
   const empty = noFeeds ? (
     <div className="space-y-3 p-6 text-sm">
       <p>No feeds yet. Import your Feedly OPML export to get started.</p>
@@ -202,22 +285,35 @@ export function ReaderApp() {
     <div
       className={cn(
         "grid h-dvh overflow-hidden",
-        sidebarOpen
+        sidebarColumn
           ? "grid-cols-1 lg:grid-cols-[16rem_24rem_minmax(0,1fr)]"
           : "grid-cols-1 lg:grid-cols-[24rem_minmax(0,1fr)]",
       )}
     >
-      {sidebarOpen && (
-        <div className="hidden min-h-0 lg:block">
+      {(sidebarColumn || (!isLarge && drawerOpen)) && (
+        <div
+          className={cn(
+            "min-h-0",
+            !sidebarColumn && "fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] shadow-xl",
+          )}
+        >
           <Sidebar
             tree={tree.data}
             view={view}
             onSelect={selectView}
             onSync={runSync}
             syncing={sync.isPending}
-            onImport={() => setImportOpen(true)}
+            onAction={onAction}
           />
         </div>
+      )}
+      {!isLarge && drawerOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-30 bg-black/40"
+          onClick={() => setDrawerOpen(false)}
+        />
       )}
       {/* Below lg, the reader replaces the list when an article is open. */}
       <div className={cn("min-h-0", articleId && "hidden lg:block")}>
@@ -232,6 +328,9 @@ export function ReaderApp() {
           loadMore={() => !list.isFetchingNextPage && list.fetchNextPage()}
           loadingMore={list.isFetchingNextPage}
           empty={empty}
+          notice={feedNotice}
+          refreshing={refreshFeed.isPending || sync.isPending}
+          onShowSidebar={sidebarColumn ? undefined : toggleSidebar}
         />
       </div>
       <div className={cn("min-h-0", !articleId && "hidden lg:block")}>
@@ -248,6 +347,70 @@ export function ReaderApp() {
       </div>
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={runSync} />
+      <AddFeedDialog
+        open={action?.kind === "addFeed"}
+        onOpenChange={(o) => !o && setAction(null)}
+        folders={tree.data?.folders ?? []}
+        defaultFolderId={action?.kind === "addFeed" ? action.folderId : null}
+        onAdded={(id) => selectView({ kind: "feed", id })}
+      />
+      <PromptDialog
+        open={action?.kind === "newFolder"}
+        onOpenChange={(o) => !o && setAction(null)}
+        title="New folder"
+        label="Name"
+        submitLabel="Create"
+        onSubmit={(name) => manage.createFolder.mutateAsync(name)}
+      />
+      <PromptDialog
+        open={action?.kind === "renameFeed" || action?.kind === "renameFolder"}
+        onOpenChange={(o) => !o && setAction(null)}
+        title={action?.kind === "renameFolder" ? "Rename folder" : "Rename feed"}
+        label="Name"
+        initial={
+          action?.kind === "renameFeed"
+            ? action.feed.title
+            : action?.kind === "renameFolder"
+              ? action.folder.name
+              : ""
+        }
+        onSubmit={async (name) => {
+          if (action?.kind === "renameFeed")
+            await manage.updateFeed.mutateAsync({ id: action.feed.id, title: name });
+          else if (action?.kind === "renameFolder")
+            await manage.renameFolder.mutateAsync({ id: action.folder.id, name });
+        }}
+      />
+      <ConfirmDialog
+        open={action?.kind === "unfollow"}
+        onOpenChange={(o) => !o && setAction(null)}
+        title={action?.kind === "unfollow" ? `Unfollow ${action.feed.title}?` : ""}
+        confirmLabel="Unfollow"
+        onConfirm={async () => {
+          if (action?.kind !== "unfollow") return;
+          const r = await manage.removeFeed.mutateAsync(action.feed.id);
+          if (view.kind === "feed" && view.id === action.feed.id) selectView({ kind: "all" });
+          toast(
+            `Unfollowed ${action.feed.title}` +
+              (r.keptBookmarks ? ` · ${r.keptBookmarks} bookmark(s) kept` : ""),
+          );
+        }}
+      >
+        Its articles are removed. Bookmarked ones stay in Bookmarks. You can follow it again later.
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={action?.kind === "deleteFolder"}
+        onOpenChange={(o) => !o && setAction(null)}
+        title={action?.kind === "deleteFolder" ? `Delete ${action.folder.name}?` : ""}
+        confirmLabel="Delete folder"
+        onConfirm={async () => {
+          if (action?.kind !== "deleteFolder") return;
+          await manage.deleteFolder.mutateAsync(action.folder.id);
+          if (view.kind === "folder" && view.id === action.folder.id) selectView({ kind: "all" });
+        }}
+      >
+        The feeds in it aren&apos;t unfollowed. They move out of the folder.
+      </ConfirmDialog>
       <ShortcutsDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );

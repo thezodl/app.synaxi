@@ -50,3 +50,50 @@ export function parseOpml(xml: string): OpmlFeed[] {
   walk(top, null);
   return out;
 }
+
+function xmlAttr(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!,
+  );
+}
+
+function outline(f: OpmlFeed, indent: string): string {
+  const t = xmlAttr(f.title);
+  const site = f.siteUrl ? ` htmlUrl="${xmlAttr(f.siteUrl)}"` : "";
+  return `${indent}<outline type="rss" text="${t}" title="${t}" xmlUrl="${xmlAttr(f.url)}"${site}/>`;
+}
+
+/**
+ * Serialise feeds as OPML 2.0 (one level of folders, like Feedly). `folders` fixes folder order
+ * and lets empty folders survive a round trip. `parseOpml(buildOpml(x))` returns the same feeds.
+ */
+export function buildOpml(feeds: OpmlFeed[], folders: string[] = [], title = "Synaxi"): string {
+  const names = [...new Set([...folders, ...feeds.flatMap((f) => (f.folder ? [f.folder] : []))])];
+  const body: string[] = [];
+  for (const name of names) {
+    const inFolder = feeds.filter((f) => f.folder === name);
+    const n = xmlAttr(name);
+    if (!inFolder.length) {
+      body.push(`    <outline text="${n}" title="${n}"/>`);
+      continue;
+    }
+    body.push(`    <outline text="${n}" title="${n}">`);
+    body.push(...inFolder.map((f) => outline(f, "      ")));
+    body.push("    </outline>");
+  }
+  body.push(...feeds.filter((f) => !f.folder).map((f) => outline(f, "    ")));
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<opml version="2.0">',
+    "  <head>",
+    `    <title>${xmlAttr(title)}</title>`,
+    `    <dateCreated>${new Date().toUTCString()}</dateCreated>`,
+    "  </head>",
+    "  <body>",
+    ...body,
+    "  </body>",
+    "</opml>",
+    "",
+  ].join("\n");
+}

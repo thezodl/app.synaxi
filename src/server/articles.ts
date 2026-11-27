@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, desc, eq, gte, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 
+import { groupCarousels } from "@/core/extract/carousel";
 import { extractFromPage, needsFullPage, prepareArticle } from "@/core/extract/pipeline";
 import { sanitizeArticleHtml } from "@/core/extract/sanitize";
 import { isFullText } from "@/core/feeds/fulltext";
@@ -208,9 +209,9 @@ export async function getArticle(id: string): Promise<ArticleDetail | null> {
   if (!a) return null;
 
   const usingExtracted = !a.isFullText && !!a.extractedHtml;
-  const html = prepareArticle(a).html;
+  const html = groupCarousels(prepareArticle(a).html);
   const altHtml = usingExtracted
-    ? sanitizeArticleHtml(a.rssHtml, a.url, { author: a.author }).html
+    ? groupCarousels(sanitizeArticleHtml(a.rssHtml, a.url, { author: a.author }).html)
     : null;
   return {
     ...toItem(a as unknown as ListRow),

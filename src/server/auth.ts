@@ -3,6 +3,7 @@ import "server-only";
 import { createRemoteJWKSet } from "jose";
 import { unstable_rethrow } from "next/navigation";
 
+import { UserError } from "./errors";
 import { KeyMismatchError } from "./keys";
 import { Unauthorized, verifyBearer, type AuthUser, type VerifierConfig } from "./jwt";
 
@@ -44,6 +45,9 @@ export function withUser<Ctx>(
       unstable_rethrow(e);
       if (e instanceof Unauthorized) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      if (e instanceof UserError) {
+        return Response.json({ error: e.message }, { status: e.status });
       }
       if (e instanceof KeyMismatchError) {
         console.error(e.message);

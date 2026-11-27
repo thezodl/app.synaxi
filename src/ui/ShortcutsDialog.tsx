@@ -9,9 +9,11 @@ export const SHORTCUTS: [string, string][] = [
   ["b", "Toggle bookmark"],
   ["v", "Full article ⇄ feed version"],
   ["r", "Refresh feeds"],
+  ["a", "Add feed"],
   ["[", "Toggle sidebar"],
   ["Esc", "Close article"],
   ["?", "Show shortcuts"],
+  ["← / → · z", "Lightbox: previous / next · zoom"],
 ];
 
 export function ShortcutsDialog({

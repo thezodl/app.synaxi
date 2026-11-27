@@ -5,8 +5,9 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { OpmlFeed } from "@/core/opml";
 
 import { db } from "./db";
-import { feeds, folders } from "./db/schema";
-import { assertKeyMatchesDb, sealUrl } from "./keys";
+import { UserError } from "./errors";
+import { articles, feeds, folders } from "./db/schema";
+import { assertKeyMatchesDb, hmacUrl, openUrl, sealUrl } from "./keys";
 
 export interface FolderDto {
   id: string;
@@ -146,4 +147,164 @@ export async function deleteOrphanedRemovedFeeds() {
         sql`not exists (select 1 from articles a where a.feed_id = ${feeds.id})`,
       ),
     );
+}
+
+/** A user-facing error (409/400/404), never containing a URL. */
+export class FeedError extends UserError {}
+
+async function folderExists(id: string) {
+  const [r] = await db().select({ id: folders.id }).from(folders).where(eq(folders.id, id));
+  return !!r;
+}
+
+/**
+ * Follow a feed found by discovery. Reviving an unfollowed feed (kept for its bookmarks) counts as
+ * adding it. Throws FeedError 409 if it's already followed.
+ */
+export async function addFeed(f: {
+  url: string;
+  title: string;
+  siteUrl: string | null;
+  folderId: string | null;
+}): Promise<string> {
+  await assertKeyMatchesDb();
+  if (f.folderId && !(await folderExists(f.folderId))) throw new FeedError("No such folder", 404);
+  const rows = await db()
+    .insert(feeds)
+    .values({ ...sealUrl(f.url), title: f.title, siteUrl: f.siteUrl, folderId: f.folderId })
+    .onConflictDoUpdate({
+      target: feeds.urlHmac,
+      set: {
+        removedAt: null,
+        title: sql`excluded.title`,
+        siteUrl: sql`coalesce(excluded.site_url, ${feeds.siteUrl})`,
+        folderId: sql`excluded.folder_id`,
+        etag: null,
+        lastModified: null,
+        lastError: null,
+      },
+      setWhere: isNotNull(feeds.removedAt),
+    })
+    .returning({ id: feeds.id });
+  if (!rows[0]) throw new FeedError("You already follow this feed", 409);
+  return rows[0].id;
+}
+
+/** Is this URL already followed? (HMAC lookup; no decryption.) */
+export async function isFollowed(url: string): Promise<boolean> {
+  await assertKeyMatchesDb();
+  const [r] = await db()
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(and(eq(feeds.urlHmac, hmacUrl(url)), isNull(feeds.removedAt)));
+  return !!r;
+}
+
+export async function updateFeed(id: string, patch: { title?: string; folderId?: string | null }) {
+  if (patch.folderId && !(await folderExists(patch.folderId))) {
+    throw new FeedError("No such folder", 404);
+  }
+  const rows = await db()
+    .update(feeds)
+    .set({
+      ...(patch.title !== undefined && { title: patch.title }),
+      ...(patch.folderId !== undefined && { folderId: patch.folderId }),
+    })
+    .where(and(eq(feeds.id, id), isNull(feeds.removedAt)))
+    .returning({ id: feeds.id });
+  if (!rows[0]) throw new FeedError("Feed not found", 404);
+}
+
+/**
+ * Unfollow (mirrors mobile). Articles are deleted except bookmarked ones, which stay in
+ * Bookmarks; the feed row stays hidden until they're gone (see deleteOrphanedRemovedFeeds).
+ */
+export async function removeFeed(id: string): Promise<{ keptBookmarks: number }> {
+  const [feed] = await db()
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(and(eq(feeds.id, id), isNull(feeds.removedAt)));
+  if (!feed) throw new FeedError("Feed not found", 404);
+
+  await db()
+    .delete(articles)
+    .where(and(eq(articles.feedId, id), isNull(articles.bookmarkedAt)));
+  const [{ n }] = await db()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(articles)
+    .where(eq(articles.feedId, id));
+  if (n) {
+    await db()
+      .update(feeds)
+      .set({ removedAt: new Date(), folderId: null, etag: null, lastModified: null })
+      .where(eq(feeds.id, id));
+  } else {
+    await db().delete(feeds).where(eq(feeds.id, id));
+  }
+  return { keptBookmarks: n };
+}
+
+export async function createFolder(name: string): Promise<FolderDto> {
+  const rows = await db()
+    .insert(folders)
+    .values({ name })
+    .onConflictDoNothing({ target: folders.name })
+    .returning({ id: folders.id, name: folders.name });
+  if (!rows[0]) throw new FeedError("A folder with that name already exists", 409);
+  return rows[0];
+}
+
+export async function renameFolder(id: string, name: string) {
+  try {
+    const rows = await db()
+      .update(folders)
+      .set({ name })
+      .where(eq(folders.id, id))
+      .returning({ id: folders.id });
+    if (!rows[0]) throw new FeedError("Folder not found", 404);
+  } catch (e) {
+    if (e instanceof FeedError) throw e;
+    // Unique violation on name.
+    if ((e as { code?: string; cause?: { code?: string } }).cause?.code === "23505") {
+      throw new FeedError("A folder with that name already exists", 409);
+    }
+    throw e;
+  }
+}
+
+/** Delete a folder; its feeds become ungrouped (FK ON DELETE SET NULL). */
+export async function deleteFolder(id: string) {
+  const rows = await db().delete(folders).where(eq(folders.id, id)).returning({ id: folders.id });
+  if (!rows[0]) throw new FeedError("Folder not found", 404);
+}
+
+/** Everything OPML export needs. The only place feed URLs are decrypted for output. */
+export async function listForExport() {
+  await assertKeyMatchesDb();
+  const [fs, fds] = await Promise.all([
+    db()
+      .select({ id: folders.id, name: folders.name })
+      .from(folders)
+      .orderBy(asc(folders.position), sql`lower(${folders.name})`),
+    db()
+      .select({
+        urlEnc: feeds.urlEnc,
+        title: feeds.title,
+        siteUrl: feeds.siteUrl,
+        folderId: feeds.folderId,
+      })
+      .from(feeds)
+      .where(isNull(feeds.removedAt))
+      .orderBy(asc(feeds.position), sql`lower(${feeds.title})`),
+  ]);
+  const names = new Map(fs.map((f) => [f.id, f.name]));
+  return {
+    folders: fs.map((f) => f.name),
+    feeds: fds.map((f) => ({
+      url: openUrl(f.urlEnc),
+      title: f.title,
+      siteUrl: f.siteUrl,
+      folder: f.folderId ? (names.get(f.folderId) ?? null) : null,
+    })),
+  };
 }

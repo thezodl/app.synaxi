@@ -75,6 +75,47 @@ export type SyncResult =
   | { status: "skipped"; reason: "recent" | "running"; state: SyncState }
   | { status: "done"; state: SyncState };
 
+type SyncFeed = Awaited<ReturnType<typeof listFeedsForSync>>[number];
+
+/** Fetch one feed (conditional GET) and store new entries. Records the outcome on the feed row. */
+async function syncOne(
+  feed: SyncFeed,
+): Promise<{ ok: true; added: number } | { ok: false; error: string }> {
+  try {
+    const r = await fetchFeed(openUrl(feed.urlEnc), feed.etag, feed.lastModified);
+    if (r.status === "not-modified") {
+      await updateFetchState(feed.id, { error: null });
+      return { ok: true, added: 0 };
+    }
+    let parsed;
+    try {
+      parsed = parseFeed(r.body);
+    } catch {
+      throw new FetchError("Not a feed");
+    }
+    const added = await insertEntries(feed.id, parsed.entries);
+    await updateFetchState(feed.id, {
+      etag: r.etag,
+      lastModified: r.lastModified,
+      siteUrl: parsed.siteUrl,
+      error: null,
+    });
+    return { ok: true, added };
+  } catch (e) {
+    // FetchError messages are URL-free by construction; anything else gets a generic label.
+    const error = e instanceof FetchError ? e.message : "Failed";
+    await updateFetchState(feed.id, { error }).catch(() => undefined);
+    return { ok: false, error };
+  }
+}
+
+/** Fetch a single feed right away (after adding it). Doesn't take the global lease. */
+export async function syncFeed(id: string) {
+  await assertKeyMatchesDb();
+  const [feed] = (await listFeedsForSync()).filter((f) => f.id === id);
+  return feed ? syncOne(feed) : { ok: false as const, error: "Feed not found" };
+}
+
 /** Fetch every followed feed and store new entries. */
 export async function syncAll(opts: { auto?: boolean } = {}): Promise<SyncResult> {
   await assertKeyMatchesDb();
@@ -90,32 +131,9 @@ export async function syncAll(opts: { auto?: boolean } = {}): Promise<SyncResult
     let added = 0;
     let failed = 0;
     await mapPool(list, CONCURRENCY, async (feed) => {
-      try {
-        const r = await fetchFeed(openUrl(feed.urlEnc), feed.etag, feed.lastModified);
-        if (r.status === "not-modified") {
-          await updateFetchState(feed.id, { error: null });
-          return;
-        }
-        let parsed;
-        try {
-          parsed = parseFeed(r.body);
-        } catch {
-          throw new FetchError("Not a feed");
-        }
-        added += await insertEntries(feed.id, parsed.entries);
-        await updateFetchState(feed.id, {
-          etag: r.etag,
-          lastModified: r.lastModified,
-          siteUrl: parsed.siteUrl,
-          error: null,
-        });
-      } catch (e) {
-        failed++;
-        // FetchError messages are URL-free by construction; anything else gets a generic label.
-        await updateFetchState(feed.id, {
-          error: e instanceof FetchError ? e.message : "Failed",
-        }).catch(() => undefined);
-      }
+      const r = await syncOne(feed);
+      if (r.ok) added += r.added;
+      else failed++;
     });
     const state: SyncState = {
       lastStartedAt: now,

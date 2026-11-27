@@ -8,6 +8,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 
+import type { Typography } from "@/core/typography";
 import { startOfLocalDay, viewKey, type View } from "@/core/views";
 import type { ArticleDetail, ArticleListItem } from "@/server/articles";
 import type { FeedDto, FolderDto } from "@/server/feeds";
@@ -120,5 +121,98 @@ export function useImportOpml() {
         headers: { "content-type": "text/x-opml" },
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.tree }),
+  });
+}
+
+// ---- Phase 2: feed management, typography ----
+
+export interface FoundFeed {
+  url: string;
+  title: string;
+  siteUrl: string | null;
+  followed: boolean;
+}
+
+export function useDiscover() {
+  return useMutation({
+    mutationFn: (input: string) =>
+      api<{ feeds: FoundFeed[] }>("/api/feeds/discover", {
+        method: "POST",
+        body: JSON.stringify({ input }),
+      }),
+  });
+}
+
+export function useAddFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (f: {
+      url: string;
+      title: string;
+      siteUrl: string | null;
+      folderId: string | null;
+    }) =>
+      api<{ id: string; sync: { ok: boolean; added?: number; error?: string } }>("/api/feeds", {
+        method: "POST",
+        body: JSON.stringify(f),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.tree });
+      qc.invalidateQueries({ queryKey: keys.allArticles });
+    },
+  });
+}
+
+/** Rename/move feeds and folders, unfollow, folder CRUD: all just refresh the tree (+ lists). */
+export function useManage() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: keys.tree });
+    qc.invalidateQueries({ queryKey: keys.allArticles });
+  };
+  const m = <A, R>(fn: (a: A) => Promise<R>) => ({ mutationFn: fn, onSuccess: refresh });
+  return {
+    updateFeed: useMutation(
+      m(({ id, ...patch }: { id: string; title?: string; folderId?: string | null }) =>
+        api(`/api/feeds/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+      ),
+    ),
+    removeFeed: useMutation(
+      m((id: string) => api<{ keptBookmarks: number }>(`/api/feeds/${id}`, { method: "DELETE" })),
+    ),
+    createFolder: useMutation(
+      m((name: string) =>
+        api<FolderDto>("/api/folders", { method: "POST", body: JSON.stringify({ name }) }),
+      ),
+    ),
+    renameFolder: useMutation(
+      m(({ id, name }: { id: string; name: string }) =>
+        api(`/api/folders/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+      ),
+    ),
+    deleteFolder: useMutation(m((id: string) => api(`/api/folders/${id}`, { method: "DELETE" }))),
+  };
+}
+
+export function useTypography() {
+  return useQuery({
+    queryKey: ["settings"],
+    queryFn: () => api<{ typography: Typography }>("/api/settings"),
+    select: (r) => r.typography,
+    staleTime: Infinity,
+  });
+}
+
+export function useSetTypography() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (t: Typography) =>
+      api<{ typography: Typography }>("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({ typography: t }),
+      }),
+    // Optimistic: the reader restyles immediately.
+    onMutate: (t) => qc.setQueryData(["settings"], { typography: t }),
+    onSuccess: (r) => qc.setQueryData(["settings"], r),
   });
 }

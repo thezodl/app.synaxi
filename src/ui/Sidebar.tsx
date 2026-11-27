@@ -2,6 +2,10 @@
 
 import {
   Bookmark,
+  Download,
+  FolderPlus,
+  MoreHorizontal,
+  Plus,
   CalendarDays,
   ChevronRight,
   CircleAlert,
@@ -13,12 +17,51 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import type { FeedDto, Tree } from "@/client/hooks";
+import type { FeedDto, FolderDto, Tree } from "@/client/hooks";
 import { relativeTime } from "@/client/format";
 import { viewKey, type View } from "@/core/views";
 import { cn } from "@/lib/utils";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 import { Favicon } from "./Favicon";
+
+/** What the sidebar asks the app to do; ReaderApp owns the dialogs. */
+export type SidebarAction =
+  | { kind: "addFeed"; folderId: string | null }
+  | { kind: "newFolder" }
+  | { kind: "renameFeed"; feed: FeedDto }
+  | { kind: "moveFeed"; feed: FeedDto; folderId: string | null }
+  | { kind: "unfollow"; feed: FeedDto }
+  | { kind: "renameFolder"; folder: FolderDto }
+  | { kind: "deleteFolder"; folder: FolderDto }
+  | { kind: "import" }
+  | { kind: "export" };
+
+function RowMenu({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="hover:bg-sidebar-accent data-popup-open:bg-sidebar-accent text-muted-foreground absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
+        aria-label={label}
+      >
+        <MoreHorizontal className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /** Views in sidebar order, for n/p navigation. */
 export function orderedViews(tree: Tree | undefined): View[] {
@@ -87,27 +130,68 @@ function FeedItem({
   view,
   onSelect,
   indent,
+  folders,
+  onAction,
 }: {
   feed: FeedDto;
   view: View;
   onSelect: (v: View) => void;
   indent?: boolean;
+  folders: FolderDto[];
+  onAction: (a: SidebarAction) => void;
 }) {
   return (
-    <Item
-      indent={indent}
-      active={view.kind === "feed" && view.id === feed.id}
-      onClick={() => onSelect({ kind: "feed", id: feed.id })}
-      icon={<Favicon siteUrl={feed.siteUrl} title={feed.title} />}
-      label={feed.title}
-      trailing={
-        feed.lastError ? (
-          <CircleAlert className="text-destructive size-3.5" aria-label={feed.lastError}>
-            <title>{feed.lastError}</title>
-          </CircleAlert>
-        ) : null
-      }
-    />
+    <div className="group/row relative">
+      <Item
+        indent={indent}
+        active={view.kind === "feed" && view.id === feed.id}
+        onClick={() => onSelect({ kind: "feed", id: feed.id })}
+        icon={<Favicon siteUrl={feed.siteUrl} title={feed.title} />}
+        label={feed.title}
+        trailing={
+          feed.lastError ? (
+            <CircleAlert
+              className="text-destructive size-3.5 group-hover/row:invisible"
+              aria-label={feed.lastError}
+            >
+              <title>{feed.lastError}</title>
+            </CircleAlert>
+          ) : null
+        }
+      />
+      <RowMenu label={`Options for ${feed.title}`}>
+        <DropdownMenuItem onClick={() => onAction({ kind: "renameFeed", feed })}>
+          Rename…
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-48">
+            <DropdownMenuItem
+              disabled={!feed.folderId}
+              onClick={() => onAction({ kind: "moveFeed", feed, folderId: null })}
+            >
+              No folder
+            </DropdownMenuItem>
+            {folders.map((f) => (
+              <DropdownMenuItem
+                key={f.id}
+                disabled={feed.folderId === f.id}
+                onClick={() => onAction({ kind: "moveFeed", feed, folderId: f.id })}
+              >
+                {f.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => onAction({ kind: "unfollow", feed })}
+        >
+          Unfollow…
+        </DropdownMenuItem>
+      </RowMenu>
+    </div>
   );
 }
 
@@ -117,14 +201,14 @@ export function Sidebar({
   onSelect,
   onSync,
   syncing,
-  onImport,
+  onAction,
 }: {
   tree: Tree | undefined;
   view: View;
   onSelect: (v: View) => void;
   onSync: () => void;
   syncing: boolean;
-  onImport: () => void;
+  onAction: (a: SidebarAction) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggle = (id: string) =>
@@ -173,9 +257,29 @@ export function Sidebar({
           label="Bookmarks"
         />
 
-        {tree && (tree.folders.length > 0 || tree.feeds.length > 0) && (
-          <div className="text-muted-foreground px-2 pt-4 pb-1 text-xs font-medium">Feeds</div>
-        )}
+        <div className="text-muted-foreground flex items-center px-2 pt-4 pb-1 text-xs font-medium">
+          <span className="flex-1">Feeds</span>
+          <button
+            type="button"
+            onClick={() => onAction({ kind: "newFolder" })}
+            className="hover:bg-sidebar-accent hover:text-foreground rounded p-1"
+            title="New folder"
+          >
+            <FolderPlus className="size-3.5" />
+            <span className="sr-only">New folder</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onAction({ kind: "addFeed", folderId: view.kind === "folder" ? view.id : null })
+            }
+            className="hover:bg-sidebar-accent hover:text-foreground rounded p-1"
+            title="Add feed (a)"
+          >
+            <Plus className="size-3.5" />
+            <span className="sr-only">Add feed</span>
+          </button>
+        </div>
         {tree?.folders.map((folder) => {
           const open = !collapsed.has(folder.id);
           return (
@@ -192,20 +296,45 @@ export function Sidebar({
                     className={cn("size-3.5 transition-transform", open && "rotate-90")}
                   />
                 </button>
-                <div className="min-w-0 flex-1">
+                <div className="group/row relative min-w-0 flex-1">
                   <Item
                     active={isActive({ kind: "folder", id: folder.id })}
                     onClick={() => onSelect({ kind: "folder", id: folder.id })}
                     icon={<Folder className="size-4" />}
                     label={folder.name}
                   />
+                  <RowMenu label={`Options for ${folder.name}`}>
+                    <DropdownMenuItem
+                      onClick={() => onAction({ kind: "addFeed", folderId: folder.id })}
+                    >
+                      Add feed here…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onAction({ kind: "renameFolder", folder })}>
+                      Rename…
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => onAction({ kind: "deleteFolder", folder })}
+                    >
+                      Delete folder…
+                    </DropdownMenuItem>
+                  </RowMenu>
                 </div>
               </div>
               {open &&
                 tree.feeds
                   .filter((f) => f.folderId === folder.id)
                   .map((f) => (
-                    <FeedItem key={f.id} feed={f} view={view} onSelect={onSelect} indent />
+                    <FeedItem
+                      key={f.id}
+                      feed={f}
+                      view={view}
+                      onSelect={onSelect}
+                      folders={tree.folders}
+                      onAction={onAction}
+                      indent
+                    />
                   ))}
             </div>
           );
@@ -213,7 +342,14 @@ export function Sidebar({
         {tree?.feeds
           .filter((f) => !f.folderId)
           .map((f) => (
-            <FeedItem key={f.id} feed={f} view={view} onSelect={onSelect} />
+            <FeedItem
+              key={f.id}
+              feed={f}
+              view={view}
+              onSelect={onSelect}
+              folders={tree.folders}
+              onAction={onAction}
+            />
           ))}
       </div>
 
@@ -228,13 +364,20 @@ export function Sidebar({
         ) : (
           <p>Not synced yet</p>
         )}
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
           <button
             type="button"
-            onClick={onImport}
+            onClick={() => onAction({ kind: "import" })}
             className="hover:text-foreground flex items-center gap-1"
           >
-            <Upload className="size-3.5" /> Import OPML
+            <Upload className="size-3.5" /> Import
+          </button>
+          <button
+            type="button"
+            onClick={() => onAction({ kind: "export" })}
+            className="hover:text-foreground flex items-center gap-1"
+          >
+            <Download className="size-3.5" /> Export
           </button>
           <a href="/auth/logout" className="hover:text-foreground flex items-center gap-1">
             <LogOut className="size-3.5" /> Log out

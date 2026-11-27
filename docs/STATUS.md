@@ -52,6 +52,31 @@ Verified 2026-11-27:
 Still to check in a browser (needs a real login): import the real OPML, the reading flow, video playback,
 keyboard shortcuts, auto-clear + Undo, narrow layout.
 
+## Phase 2 (branch `phase-2`)
+
+Built:
+
+- **Feed management:** add by URL (a feed or a site address; discovery via `<link rel=alternate>`, then
+  common paths), with folder choice and an immediate first fetch. Rename, move (submenu) and unfollow feeds
+  (bookmarks kept, as mobile). New, rename and delete folders (feeds move out). A failing feed shows its error
+  above the list. Shortcut `a`.
+- **OPML export** (sidebar → Export): downloads via fetch + Bearer, `no-store`.
+- **Reader:** carousels for 3+ consecutive images (server groups them; client adds prev/next and a counter),
+  a lightbox (arrows/swipe, `z` zoom, captions), and a typography popover (font, size, line height, width;
+  saved in `settings`).
+
+Verified 2026-11-27:
+
+- 78 unit tests (new: OPML writer round-trip, carousel grouping, typography validation) + build.
+- Server end to end against the shared DB (own `e2e` rows only, cleaned up): discovery (page → feed, direct
+  feed, junk, no-feed page with a URL-free message), folder create/rename conflicts (409), add + duplicate
+  (409), first fetch, rename/move, move to a missing folder (404), export decrypts and round-trips your 30
+  feeds, unfollow keeps bookmarks and re-adding revives the feed, typography clamping.
+- All 10 new routes return 401 without a token.
+
+Still to check in a browser: menus and dialogs, carousel/lightbox on a gallery-heavy post, typography
+changes, the export file opening in another reader.
+
 ## Then
 
 Phase 2: feed management (add by URL, rename/move/delete), OPML export, carousel, lightbox, typography.

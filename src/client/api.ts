@@ -29,8 +29,7 @@ async function token(): Promise<string> {
   }
 }
 
-/** Call our API with the Auth0 access token. The same contract the mobile app will use later. */
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function send(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${await token()}`);
   if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
@@ -41,5 +40,29 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
   }
+  return res;
+}
+
+/** Call our API with the Auth0 access token. The same contract the mobile app will use later. */
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await send(path, init);
   return (res.status === 204 ? undefined : await res.json()) as T;
+}
+
+/**
+ * Download an API response as a file. A plain <a href> can't carry the Bearer token, so fetch it
+ * and save via an object URL.
+ */
+export async function download(path: string, fallbackName: string): Promise<void> {
+  const res = await send(path, {});
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement("a"), {
+    href: url,
+    download: name ?? fallbackName,
+  });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

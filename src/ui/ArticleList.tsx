@@ -82,7 +82,9 @@ export function ArticleList({
   loadMore,
   loadingMore,
   empty,
+  notice,
 }: {
+  notice?: string | null;
   title: string;
   items: ArticleListItem[];
   selectedId: string | null;
@@ -110,6 +112,11 @@ export function ArticleList({
       <header className="flex h-12 shrink-0 items-center border-b px-4">
         <h2 className="truncate font-semibold">{title}</h2>
       </header>
+      {notice && (
+        <p role="status" className="bg-destructive/10 text-destructive border-b px-4 py-2 text-xs">
+          {notice}
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading && <p className="text-muted-foreground p-4 text-sm">Loading…</p>}
         {error && <p className="text-destructive p-4 text-sm">{error}</p>}

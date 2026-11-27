@@ -6,7 +6,7 @@ import type { OpmlFeed } from "@/core/opml";
 
 import { db } from "./db";
 import { feeds, folders } from "./db/schema";
-import { sealUrl } from "./keys";
+import { assertKeyMatchesDb, sealUrl } from "./keys";
 
 export interface FolderDto {
   id: string;
@@ -88,6 +88,7 @@ export async function updateFetchState(
  */
 export async function importFeeds(list: OpmlFeed[]): Promise<{ added: number; skipped: number }> {
   if (!list.length) return { added: 0, skipped: 0 };
+  await assertKeyMatchesDb();
 
   const names = [...new Set(list.map((f) => f.folder).filter((n): n is string => !!n))];
   const folderIds = new Map<string, string>();

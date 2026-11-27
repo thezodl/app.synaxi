@@ -79,8 +79,9 @@ function decodeCursor(c: string | null): { at: Date; id: string } | null {
 
 export async function listArticles(
   view: View,
-  opts: { cursor: string | null; todayStart: number | null },
+  opts: { cursor: string | null; todayStart: number | null; limit?: number },
 ): Promise<{ items: ArticleListItem[]; nextCursor: string | null }> {
+  const size = opts.limit ?? PAGE_SIZE;
   const bookmarks = view.kind === "bookmarks";
   const key = bookmarks ? articles.bookmarkedAt : articles.sortAt;
   const where: (SQL | undefined)[] = [];
@@ -113,12 +114,12 @@ export async function listArticles(
     .innerJoin(feeds, eq(feeds.id, articles.feedId))
     .where(and(...where))
     .orderBy(desc(key), desc(articles.id))
-    .limit(PAGE_SIZE + 1)) as ListRow[];
+    .limit(size + 1)) as ListRow[];
 
-  const page = rows.slice(0, PAGE_SIZE).map(toItem);
+  const page = rows.slice(0, size).map(toItem);
   const last = page.at(-1);
   const nextCursor =
-    rows.length > PAGE_SIZE && last
+    rows.length > size && last
       ? encodeCursor((bookmarks ? last.bookmarkedAt : last.sortAt)!, last.id)
       : null;
   return { items: page, nextCursor };

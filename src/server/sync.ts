@@ -10,7 +10,7 @@ import { db } from "./db";
 import { settings } from "./db/schema";
 import { listFeedsForSync, updateFetchState } from "./feeds";
 import { FetchError, fetchFeed } from "./http";
-import { openUrl } from "./keys";
+import { assertKeyMatchesDb, openUrl } from "./keys";
 
 const CONCURRENCY = 6;
 /** Skip automatic (on-open) syncs if we synced this recently. Manual refresh always runs. */
@@ -77,6 +77,7 @@ export type SyncResult =
 
 /** Fetch every followed feed and store new entries. */
 export async function syncAll(opts: { auto?: boolean } = {}): Promise<SyncResult> {
+  await assertKeyMatchesDb();
   const now = Date.now();
   const prev = await getSyncState();
   if (opts.auto && prev.lastFinishedAt && now - prev.lastFinishedAt < AUTO_SYNC_MIN_INTERVAL) {

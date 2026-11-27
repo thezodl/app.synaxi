@@ -57,15 +57,17 @@ Auth0 custom domain, but we use Universal Login, where Auth0 runs the passkey ce
 2. Domains: add `synaxi.app` (apex). Point DNS at Vercel as instructed.
 3. Environment variables (Production):
 
-   | Name                  | Value                                           |
-   | --------------------- | ----------------------------------------------- |
-   | `AUTH0_DOMAIN`        | `<tenant>.us.auth0.com` (no `https://`)         |
-   | `AUTH0_CLIENT_ID`     | from the Auth0 app                              |
-   | `AUTH0_CLIENT_SECRET` | from the Auth0 app                              |
-   | `AUTH0_SECRET`        | output of `openssl rand -hex 32` (64 hex chars) |
-   | `APP_BASE_URL`        | `https://synaxi.app`                            |
-   | `AUTH0_AUDIENCE`      | `https://synaxi.app/api`                        |
-   | `DATABASE_URL`        | Neon `main` **pooled** connection string        |
+   | Name                  | Value                                                                                                                          |
+   | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+   | `AUTH0_DOMAIN`        | `<tenant>.us.auth0.com` (no `https://`)                                                                                        |
+   | `AUTH0_CLIENT_ID`     | from the Auth0 app                                                                                                             |
+   | `AUTH0_CLIENT_SECRET` | from the Auth0 app                                                                                                             |
+   | `AUTH0_SECRET`        | output of `openssl rand -hex 32` (64 hex chars)                                                                                |
+   | `APP_BASE_URL`        | `https://synaxi.app`                                                                                                           |
+   | `AUTH0_AUDIENCE`      | `https://synaxi.app/api`                                                                                                       |
+   | `DATABASE_URL`        | Neon `main` **pooled** connection string                                                                                       |
+   | `FEED_URL_KEY`        | output of `openssl rand -base64 32`, **same value in Development and Production** (shared DB); changing it orphans stored URLs |
+   | `CRON_SECRET`         | output of `openssl rand -hex 32` (Vercel Cron auth for the daily retention job)                                                |
 
 ### 4. GitHub Actions secrets
 

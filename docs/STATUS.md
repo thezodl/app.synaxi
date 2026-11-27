@@ -8,5 +8,5 @@ Nothing yet. The plan is in [PLAN.md](PLAN.md).
 
 ## Next
 
-1. Get answers to the open questions at the bottom of [PLAN.md](PLAN.md).
-2. Phase 0: scaffold, Auth0 + Bearer API auth, Neon/Drizzle, PWA shell, GitHub Actions deploys + PR previews.
+1. Phase 0: scaffold, Auth0 + Bearer API auth, Neon/Drizzle, PWA shell, GitHub Actions CI + prod deploy to
+   `synaxi.app`. (PR previews are deferred.)

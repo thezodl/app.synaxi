@@ -34,10 +34,14 @@ Feeds come from the same Feedly OPML export (Feedly's API is Enterprise-only, so
 | Reader           | Server-sanitised HTML rendered **inline in a div**, with a strict CSP                                          |
 | Images           | **Loaded directly from the origin** (https-upgraded); no proxy                                                 |
 | IDs              | **UUIDv7** primary keys                                                                                        |
-| Retention        | **Purge after N days** (bookmarks never purged), run by the daily Vercel cron                                  |
+| Retention        | **14 days** (bookmarks never purged), run by the daily Vercel cron                                             |
 | Bootstrap        | **Upload OPML** through an import screen                                                                       |
 | Tooling          | **bun** (package manager + test runner)                                                                        |
-| Deploys          | **GitHub Actions** deploys with the Vercel CLI; **preview per PR with its own Neon branch**                    |
+| Deploys          | **GitHub Actions** deploys to prod with the Vercel CLI. **No PR previews for now**                             |
+| Domain           | **`synaxi.app`** (apex) on Vercel                                                                              |
+| Single-user      | Enforced by the Auth0 tenant alone (sign-ups off). **No `sub` allowlist** in the app                           |
+| View original    | Toggle **extracted ⇄ RSS** content; "Open original" opens the page in a new tab (no iframing)                  |
+| Typography       | Font family (serif/sans/system), font size, line height, max line width. Code blocks stay mono                 |
 
 ### v1 feature scope
 
@@ -73,12 +77,11 @@ Out of v1: offline reading, search, theme toggle/AMOLED, mobile sync, background
 - **Neon Free:** **1 GB storage per project** (raised from 0.5 GB in Oct 2026), 100 CU-hours/month, 10 branches
   per project. Over the cap, writes that grow storage are blocked rather than billed. Source:
   [free plan limits](https://neon.com/faqs/free-plan-limits-and-quotas).
-  - Estimate: up to 200 articles/day × ~10–40 KB ≈ 2–8 MB/day, so 30-day retention keeps us around ≤250 MB.
-  - Preview branches share the project's storage only for the data that has changed, so they're cheap.
+  - Estimate: up to 200 articles/day × ~10–40 KB ≈ 2–8 MB/day, so 14-day retention keeps us around ≤120 MB.
 - **Auth0:** wildcards are allowed in callback/logout URLs **for a whole subdomain level only**
   (`https://*.example.com`), and Auth0 advises against them in production. Sources:
   [wildcards for subdomains](https://auth0.com/docs/get-started/applications/wildcards-for-subdomains).
-  This affects preview deploys (see Open questions).
+  This is why PR previews were dropped for now. If they come back, use a separate Auth0 app for previews.
 - **`@auth0/nextjs-auth0` v4:** `getAccessToken()` works from client components. Pass the API `audience` when
   calling it, or you may get an opaque or encrypted token instead of an RS256 JWT. Source:
   [SDK reference](https://auth0.github.io/nextjs-auth0/).
@@ -166,8 +169,10 @@ The mobile `assets` table has no equivalent: images load directly, and nothing i
 
 ### Auth flow
 
-- **Auth0 tenant:** one Regular Web Application (Next.js); one **API** (identifier e.g. `https://api.synaxi`,
-  RS256, token encryption off); a Database connection with **sign-ups disabled**; passkeys enabled; refresh
+- **Auth0 tenant:** one Regular Web Application (Next.js) with exact callback/logout URLs
+  `https://synaxi.app/auth/callback`, `https://synaxi.app` and the `http://localhost:3000` equivalents;
+  `APP_BASE_URL=https://synaxi.app`. One **API** (identifier `https://synaxi.app/api`, RS256, token encryption
+  off). A Database connection with **sign-ups disabled** and passkeys enabled; no social connections. Refresh
   tokens with rotation (`offline_access`) so an installed PWA stays signed in.
 - **Browser:** nextjs-auth0 middleware handles `/auth/*` and redirects to login if there's no session. Client code
   gets an access token through `getAccessToken({ audience })` (the SDK refreshes it) and sends
@@ -195,7 +200,7 @@ The mobile `assets` table has no equivalent: images load directly, and nothing i
   has been visible for 1.5s (5s if it was visible on open), the client sends `DELETE` (sets
   `bookmark_cleared_at`) and shows a "Bookmark cleared — Undo" toast. Undo sends `PUT`.
 - **Retention:** daily cron deletes articles where `bookmarked_at IS NULL` and
-  `coalesce(bookmark_cleared_at, published_at, fetched_at) < now() - N days` (mirrors `core/retention.ts`).
+  `coalesce(bookmark_cleared_at, published_at, fetched_at) < now() - 14 days` (mirrors `core/retention.ts`).
 
 ### UI
 
@@ -204,7 +209,8 @@ The mobile `assets` table has no equivalent: images load directly, and nothing i
 - **URL state:** `/?view=folder:<uuid>&article=<uuid>`, so reload and back/forward work (same scheme as mobile).
 - **Reader:** `prose` container with reading-width and typography CSS variables (from settings), a header
   (title, feed, author, time, Open original, Bookmark), the end sentinel, a carousel (CSS scroll-snap +
-  arrow buttons), and a lightbox (Radix Dialog, arrow keys and swipe). All links get
+  arrow buttons), a lightbox (Radix Dialog, arrow keys and swipe), and a view-original toggle (extracted ⇄
+  RSS; hidden when the RSS is already the full text). All links get
   `target=_blank rel="noopener noreferrer"`.
 - **Keyboard shortcuts:** `j`/`k` next/prev article, `n`/`p` next/prev view, `o` open original, `b` toggle
   bookmark, `v` view-original toggle, `r` refresh, `[` toggle sidebar, `?` show the shortcuts dialog. Disabled
@@ -218,16 +224,17 @@ The mobile `assets` table has no equivalent: images load directly, and nothing i
 Vercel Git integration is turned off (`vercel.json` → `git.deploymentEnabled: false`). Actions does all deploys
 with the Vercel CLI (`vercel pull` → `vercel build` → `vercel deploy --prebuilt`).
 
-| Workflow      | Trigger                  | Steps                                                                                                               |
-| ------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`      | PR, push `main`          | `bun install --frozen-lockfile`, typecheck, lint, prettier check, `bun test`, `next build`                          |
-| `preview.yml` | PR opened/synchronised   | Neon `create-branch-action` (branch `pr-<n>`) → `drizzle-kit migrate` → Vercel preview deploy with that branch's `DATABASE_URL` → comment the URL on the PR |
-| `cleanup.yml` | PR closed                | Neon `delete-branch-action`                                                                                         |
-| `deploy.yml`  | push `main` (after CI)   | `drizzle-kit migrate` against prod → `vercel deploy --prod --prebuilt`                                              |
+| Workflow     | Trigger                | Steps                                                                                      |
+| ------------ | ---------------------- | ------------------------------------------------------------------------------------------ |
+| `ci.yml`     | PR, push `main`        | `bun install --frozen-lockfile`, typecheck, lint, prettier check, `bun test`, `next build`  |
+| `deploy.yml` | push `main` (after CI) | `drizzle-kit migrate` against prod → `vercel deploy --prod --prebuilt`                     |
 
-- Secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `NEON_API_KEY`, `NEON_PROJECT_ID`,
-  `DATABASE_URL` (prod, unpooled, for migrations). App secrets (`AUTH0_*`, `FEED_URL_*`, `CRON_SECRET`) live in
-  Vercel env.
+- **No PR previews for now.** PRs are checked by CI only. If previews come back, they need a Neon branch per PR
+  and a separate Auth0 app with a wildcard callback (see Verified platform limits).
+- Secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `DATABASE_URL` (prod, unpooled, for
+  migrations). App secrets (`AUTH0_*`, `APP_BASE_URL`, `FEED_URL_*`, `CRON_SECRET`) live in Vercel env.
+- **Domain:** `synaxi.app` as the apex domain on Vercel (DNS A record or Vercel nameservers). `.app` is
+  HSTS-preloaded, so it's HTTPS only, which is fine on Vercel.
 - Migrations are **expand-first and append-only**. A migration runs before the code that needs it ships, and a
   shipped migration is never edited.
 - **Local dev:** `bun dev` against a long-lived Neon `dev` branch; Auth0 callbacks include `http://localhost:3000`.
@@ -240,9 +247,9 @@ with the Vercel CLI (`vercel pull` → `vercel build` → `vercel deploy --prebu
 - Auth0 tenant setup (documented in the README); nextjs-auth0 middleware; `requireUser`; `GET /api/me` called
   from the client with a Bearer token. This proves the whole auth path end to end.
 - Drizzle + Neon wired up, with an empty first migration; PWA manifest + icons + shell service worker.
-- All four workflows; first prod deploy; one PR preview with its own Neon branch.
-- **Spikes:** (1) Readability + linkedom inside a Vercel Node function on a real page; (2) Auth0 login on a
-  preview URL (see Open questions); (3) `getAccessToken({audience})` returns an RS256 JWT.
+- `ci.yml` + `deploy.yml`; `synaxi.app` attached; first prod deploy.
+- **Spikes:** (1) Readability + linkedom inside a Vercel Node function on a real page; (2)
+  `getAccessToken({audience})` returns an RS256 JWT that `requireUser` accepts.
 
 **Phase 1: read end to end**
 
@@ -272,7 +279,7 @@ with the Vercel CLI (`vercel pull` → `vercel build` → `vercel deploy --prebu
 - **Manual:** import the real OPML (including the private feed); sync; check the error states never show a URL;
   read a summary-only article (extracted) and a YouTube post; bookmark an article, scroll to the end, check it
   auto-clears and Undo works; run through every keyboard shortcut; install the PWA from Chrome desktop and
-  relaunch to confirm the session persists; check a PR preview logs in and uses its own DB branch.
+  relaunch to confirm the session persists; confirm a second Auth0 user can't sign up.
 
 ## Defaults I picked (veto any)
 
@@ -286,22 +293,6 @@ with the Vercel CLI (`vercel pull` → `vercel build` → `vercel deploy --prebu
 
 ## Open questions
 
-1. **Retention N:** 30 days like mobile, or something else?
-2. **Auth0 on preview deploys.** Preview URLs are random `*.vercel.app` subdomains, and the only wildcard Auth0
-   accepts is `https://*.vercel.app/...`, which matches **every** Vercel app. Options:
-   a. **Separate Auth0 application** (or dev tenant) for previews that allows the `*.vercel.app` wildcard, while
-      the prod app keeps exact URLs. _Recommended._ The impact is limited because the code exchange still needs
-      the client secret.
-   b. Put a custom domain on the project and alias each preview to `pr-<n>.preview.<domain>`, with Auth0
-      wildcard `https://*.preview.<domain>`.
-   c. Previews skip real auth (a mock user via a preview-only env flag). Least work, but previews no longer test
-      the auth path.
-   Separately, the spike has to confirm that nextjs-auth0 v4 works without a fixed `APP_BASE_URL` per preview.
-3. **Neon preview branch parent:** branch from **prod** (real data; previews also need `FEED_URL_KEY`) or from a
-   seeded **dev** branch (fake feeds; prod secrets stay out of previews)?
-4. **"View original" toggle:** on mobile it switches between extracted and RSS content. Many sites block
-   iframing, so I'd keep it as **extracted ⇄ RSS**, plus "Open original" in a new tab. OK?
-5. **Domain:** a custom domain, or `<project>.vercel.app`? This affects (2) and the Auth0 config.
-6. **Extra `sub` check:** you picked Auth0-only enforcement. Should `requireUser` also check `sub` against an
-   `ALLOWED_SUB` env var as a guard against a misconfigured connection later? It's one line.
-7. **Typography settings scope:** font family (serif/sans), size, line height, max width. Anything else?
+None. Resolved 2026-11-27: retention is 14 days; there are no PR previews for now; view-original toggles
+extracted ⇄ RSS; the domain is `synaxi.app`; there's no `sub` allowlist; typography covers font family, size,
+line height and max width.

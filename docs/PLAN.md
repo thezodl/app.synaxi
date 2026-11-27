@@ -217,9 +217,11 @@ The mobile `assets` table has no equivalent: images load directly, and nothing i
 - **Keyboard shortcuts:** `j`/`k` next/prev article, `n`/`p` next/prev view, `o` open original, `b` toggle
   bookmark, `v` view-original toggle, `r` refresh, `[` toggle sidebar, `?` show the shortcuts dialog. Disabled
   while typing in inputs.
-- **Security headers:** CSP with a nonce for scripts; `frame-src` limited to `youtube-nocookie.com` and
-  `player.vimeo.com`; `img-src https: data:`; `Referrer-Policy: no-referrer` (also helps with hotlink checks).
-  `http://` image URLs are rewritten to `https://`; any that fail fall back to a broken-image placeholder.
+- **Security headers** (`next.config.ts`): a static CSP. Nonces would force dynamic rendering of the shell, and
+  Next's inline scripts need `'unsafe-inline'` even with SRI, so scripts are `'self' 'unsafe-inline'`. The real
+  guard for article HTML is the server-side allowlist sanitiser. The CSP restricts the rest: `frame-src` only
+  `youtube-nocookie.com` / `player.vimeo.com`, `img-src https: data:`, `object-src 'none'`, `base-uri`/`form-action
+'self'`, `frame-ancestors 'none'`, `upgrade-insecure-requests` (http images), and `Referrer-Policy: no-referrer`.
 
 ## Environments & CI/CD (GitHub Actions)
 
@@ -292,6 +294,18 @@ with the Vercel CLI (`vercel pull` → `vercel build` → `vercel deploy --prebu
 - Hand-written service worker instead of Serwist/next-pwa (it only caches the shell, and avoids bundler coupling).
 - Lightbox and carousel are hand-built on Radix Dialog and CSS scroll-snap, with no new dependencies.
 - ESLint + Prettier (not Biome), since bun was picked rather than "pnpm + Biome".
+
+### Changed during Phase 1 (2026-11-27)
+
+- **Sanitise on read, not write.** `rss_html` / `extracted_html` are stored raw and sanitised in
+  `GET /api/articles/:id` (as mobile does), so improved sanitiser/boilerplate rules apply to old articles.
+- **One feed-URL secret.** `FEED_URL_KEY` is split with HKDF into the AES and HMAC keys. Ciphertext and HMAC
+  are stored as base64url `text`, not `bytea`.
+- **Sync lease, not advisory lock.** The Neon HTTP driver makes each query its own session, so a single
+  conditional upsert on a `settings` row is the lock (expires after 6 min).
+- **Unfollowed feeds keep their bookmarks** (`feeds.removed_at`, as mobile). Re-importing revives them.
+- **Today** is computed by the client (`todayStart` = local midnight) since the server doesn't know the time zone.
+- The **view-original toggle** (`v`) shipped in Phase 1 because the API returns both versions anyway.
 
 ## Open questions
 

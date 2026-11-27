@@ -32,7 +32,26 @@ Still to do:
 3. Log in at https://synaxi.app, try passkey sign-in, install the PWA from Chrome desktop, relaunch, and check
    you're still signed in.
 
-## Next: Phase 1
+## Phase 1 (in progress, branch `phase-1`)
 
-Port `src/core` + tests, then the schema, URL encryption, OPML import, sync, views/list, reader, bookmarks,
-retention cron and keyboard shortcuts.
+Built: core port (49 tests), schema + migration 0001 (applied to the shared DB), feed URL encryption with a
+DB-stored key fingerprint guard, sync, extraction, the API, and the reader UI with shortcuts and bookmark
+auto-clear.
+
+Verified 2026-11-27:
+
+- `bun run check` + `next build` pass (65 unit tests).
+- Server end to end against the shared DB, with public feeds (deleted afterwards): import/re-import, ciphertext at
+  rest, sync (18 added, 1 failing feed reported as `HTTP 404` with no URL), auto-sync skip, sync lease under
+  concurrency, tree/list/paging (5 per page, no gaps or duplicates), extraction on open with feed-version
+  fallback, full-text RSS used as-is, bookmark/clear/Undo, retention keeps bookmarks, Today view. No feed URL in
+  any response.
+- HTTP: every `/api/*` route is 401 without a token; cron is 401 without `CRON_SECRET` and 200 with it; CSP and
+  security headers are present.
+
+Still to check in a browser (needs a real login): import the real OPML, the reading flow, video playback,
+keyboard shortcuts, auto-clear + Undo, narrow layout.
+
+## Then
+
+Phase 2: feed management (add by URL, rename/move/delete), OPML export, carousel, lightbox, typography.

@@ -47,8 +47,8 @@ Auth0 custom domain, but we use Universal Login, where Auth0 runs the passkey ce
 ### 2. Neon
 
 1. Create a project (Postgres 17+, region close to Vercel's `iad1` unless you change that).
-2. Create a `dev` branch for local work. Copy the **pooled** and **unpooled** connection strings for both
-   `main` (prod) and `dev`.
+2. Dev and prod **share the `main` branch** (a deliberate choice for a single-user app). Copy its **pooled** and
+   **unpooled** connection strings. Because of this, local migrations hit prod; keep them expand-first.
 
 ### 3. Vercel
 
@@ -57,15 +57,17 @@ Auth0 custom domain, but we use Universal Login, where Auth0 runs the passkey ce
 2. Domains: add `synaxi.app` (apex). Point DNS at Vercel as instructed.
 3. Environment variables (Production):
 
-   | Name                  | Value                                           |
-   | --------------------- | ----------------------------------------------- |
-   | `AUTH0_DOMAIN`        | `<tenant>.us.auth0.com` (no `https://`)         |
-   | `AUTH0_CLIENT_ID`     | from the Auth0 app                              |
-   | `AUTH0_CLIENT_SECRET` | from the Auth0 app                              |
-   | `AUTH0_SECRET`        | output of `openssl rand -hex 32` (64 hex chars) |
-   | `APP_BASE_URL`        | `https://synaxi.app`                            |
-   | `AUTH0_AUDIENCE`      | `https://synaxi.app/api`                        |
-   | `DATABASE_URL`        | Neon `main` **pooled** connection string        |
+   | Name                  | Value                                                                                                                          |
+   | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+   | `AUTH0_DOMAIN`        | `<tenant>.us.auth0.com` (no `https://`)                                                                                        |
+   | `AUTH0_CLIENT_ID`     | from the Auth0 app                                                                                                             |
+   | `AUTH0_CLIENT_SECRET` | from the Auth0 app                                                                                                             |
+   | `AUTH0_SECRET`        | output of `openssl rand -hex 32` (64 hex chars)                                                                                |
+   | `APP_BASE_URL`        | `https://synaxi.app`                                                                                                           |
+   | `AUTH0_AUDIENCE`      | `https://synaxi.app/api`                                                                                                       |
+   | `DATABASE_URL`        | Neon `main` **pooled** connection string                                                                                       |
+   | `FEED_URL_KEY`        | output of `openssl rand -base64 32`, **same value in Development and Production** (shared DB); changing it orphans stored URLs |
+   | `CRON_SECRET`         | output of `openssl rand -hex 32` (Vercel Cron auth for the daily retention job)                                                |
 
 ### 4. GitHub Actions secrets
 
@@ -111,6 +113,9 @@ and a database round trip, which tests the whole stack.
 - `src/server/`: server-only code. `auth0.ts` (SDK client), `auth.ts` (`requireUser`/`withUser`), `jwt.ts`
   (pure verifier, unit tested), `db/` (Drizzle schema + client).
 - `src/client/`: browser code. `api.ts` adds the Bearer token to every API call.
-- `src/core/`: pure TS ported from mobile (Phase 1).
+- `src/core/`: pure TS copied from mobile (feed/OPML parsing, extraction, sanitiser, retention, views).
+- `src/server/`: also `urlcrypto.ts` (feed URL AES-GCM + HMAC, unit tested), `http.ts` (URL-free errors),
+  `feeds.ts` / `articles.ts` (Drizzle queries), `sync.ts` (lease-guarded sync of all feeds).
+- `src/ui/`: Sidebar | ArticleList | Reader, dialogs; `ReaderApp.tsx` holds URL state and shortcuts.
 - `public/sw.js`: service worker that only serves an offline fallback page; no data caching.
 - `drizzle/`: generated, append-only SQL migrations.

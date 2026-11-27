@@ -47,8 +47,8 @@ Auth0 custom domain, but we use Universal Login, where Auth0 runs the passkey ce
 ### 2. Neon
 
 1. Create a project (Postgres 17+, region close to Vercel's `iad1` unless you change that).
-2. Create a `dev` branch for local work. Copy the **pooled** and **unpooled** connection strings for both
-   `main` (prod) and `dev`.
+2. Dev and prod **share the `main` branch** (a deliberate choice for a single-user app). Copy its **pooled** and
+   **unpooled** connection strings. Because of this, local migrations hit prod; keep them expand-first.
 
 ### 3. Vercel
 

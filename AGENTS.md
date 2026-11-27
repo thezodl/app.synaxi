@@ -33,6 +33,11 @@ come from an OPML import, because the Feedly API is Enterprise-only, so don't su
 - `src/server/*` modules import `server-only`, which can't load under `bun test`. Keep testable logic in
   modules without Next imports (e.g. `jwt.ts`), and keep `server-only` out of anything `proxy.ts` imports.
 
+- **Bun ≠ Node.** Tests run under Bun, but the app runs on Node (Vercel, `next dev`). Bun is more lenient
+  (e.g. `new Response(body, { status: 304 })` works in Bun and throws in Node). Verify server networking
+  code under Node: bundle a script with `bun build --target=node --conditions=react-server` from a
+  git-ignored path inside the repo (e.g. `.next/tmp/`), then run it with `node`.
+
 ## Verify before declaring done
 
 ```bash

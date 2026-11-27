@@ -111,6 +111,9 @@ and a database round trip, which tests the whole stack.
 - `src/server/`: server-only code. `auth0.ts` (SDK client), `auth.ts` (`requireUser`/`withUser`), `jwt.ts`
   (pure verifier, unit tested), `db/` (Drizzle schema + client).
 - `src/client/`: browser code. `api.ts` adds the Bearer token to every API call.
-- `src/core/`: pure TS ported from mobile (Phase 1).
+- `src/core/`: pure TS copied from mobile (feed/OPML parsing, extraction, sanitiser, retention, views).
+- `src/server/`: also `urlcrypto.ts` (feed URL AES-GCM + HMAC, unit tested), `http.ts` (URL-free errors),
+  `feeds.ts` / `articles.ts` (Drizzle queries), `sync.ts` (lease-guarded sync of all feeds).
+- `src/ui/`: Sidebar | ArticleList | Reader, dialogs; `ReaderApp.tsx` holds URL state and shortcuts.
 - `public/sw.js`: service worker that only serves an offline fallback page; no data caching.
 - `drizzle/`: generated, append-only SQL migrations.

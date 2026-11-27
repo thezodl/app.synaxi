@@ -34,6 +34,8 @@ is the same path the mobile app will use later. Single-user is enforced in Auth0
 2. **APIs → Create API** ("Synaxi API"): identifier **`https://synaxi.app/api`**, signing algorithm RS256.
    Turn **Allow Offline Access** on, so refresh tokens are issued for this audience. Leave token encryption (JWE)
    off, because the API verifies plain RS256 JWTs.
+   Then open the API's **Application Access** tab and set the Synaxi app's **User Access** to
+   **Authorized**. Without it, login fails with `Client "…" is not authorized to access resource server`.
 3. **Authentication → Database → Username-Password-Authentication**:
    - **Disable Sign Ups: on.**
    - Authentication Methods → Passkey → enable.

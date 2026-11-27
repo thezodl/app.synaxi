@@ -14,7 +14,8 @@
     "check": "bun run typecheck && bun run lint && bun run format:check && bun run test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:migrate:local": "bun --env-file=.env.development.local drizzle-kit migrate"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "4.33.0",

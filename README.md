@@ -89,8 +89,8 @@ Settings → Secrets and variables → Actions (or a `production` environment):
 
 ```bash
 bun install
-cp .env.example .env.local   # Auth0 values + Neon *dev* branch URLs
-bun run db:migrate           # apply migrations to the dev branch
+bunx vercel env pull .env.development.local   # Vercel "Development" env → local (or copy .env.example)
+bun run db:migrate:local     # apply migrations using .env.development.local
 bun dev                      # http://localhost:3000
 ```
 

@@ -84,6 +84,9 @@ UX tweaks (after first use):
 - The sidebar is collapsible (button in its header, or `[`), and the state is remembered per browser. Below
   `lg` it's an overlay drawer opened from the list header, which also fixes narrow windows having no way to
   reach the sidebar.
+- When the sidebar is collapsed (≥ `lg`), hovering the show-sidebar button with a mouse peeks it as an
+  overlay (`useSidebarPeek`). Picking a view or menu action, or moving the pointer away, closes it again.
+  Clicking the button, or the pin button in the peeked header, pins it as a column.
 - **Fix:** a 304 Not Modified crashed the fetch path under Node (see the commit), so every feed failed after
   its first sync. Error labels are now specific (Host not found, TLS error, …).
 

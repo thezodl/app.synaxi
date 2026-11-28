@@ -26,6 +26,7 @@ import { ShortcutsDialog } from "./ShortcutsDialog";
 import { AddFeedDialog } from "./AddFeedDialog";
 import { ConfirmDialog, PromptDialog } from "./dialogs";
 import { orderedViews, Sidebar, viewTitle, type SidebarAction } from "./Sidebar";
+import { useSidebarPeek } from "./useSidebarPeek";
 
 const errorText = (e: unknown) =>
   e instanceof ApiError ? e.message : e ? "Something went wrong" : null;
@@ -75,11 +76,19 @@ export function ReaderApp() {
   const isLarge = useIsLarge();
   const [sidebarPinned, setSidebarPinned] = usePersistentFlag("synaxi.sidebar", true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarColumn = isLarge && sidebarPinned;
+  // When collapsed on large screens, hovering the show button peeks it as an overlay.
+  const {
+    peeking,
+    close: closePeek,
+    panelRef: peekRef,
+    triggerProps: peekTriggerProps,
+  } = useSidebarPeek(isLarge && !sidebarPinned);
   const toggleSidebar = useCallback(() => {
+    closePeek();
     if (isLarge) setSidebarPinned(!sidebarPinned);
     else setDrawerOpen((o) => !o);
-  }, [isLarge, sidebarPinned, setSidebarPinned]);
-  const sidebarColumn = isLarge && sidebarPinned;
+  }, [isLarge, sidebarPinned, setSidebarPinned, closePeek]);
   const refreshFeed = useRefreshFeed();
   const [importOpen, setImportOpen] = useState(false);
   /** The open management dialog, if any (from the sidebar menus). */
@@ -109,8 +118,9 @@ export function ReaderApp() {
     (v: View) => {
       navigate({ view: v, article: null });
       setDrawerOpen(false);
+      closePeek();
     },
-    [navigate],
+    [navigate, closePeek],
   );
   const selectArticle = useCallback((id: string | null) => navigate({ article: id }), [navigate]);
 
@@ -149,6 +159,7 @@ export function ReaderApp() {
 
   const onAction = useCallback(
     (a: SidebarAction) => {
+      if (a.kind !== "collapse") closePeek();
       switch (a.kind) {
         case "import":
           setImportOpen(true);
@@ -179,7 +190,7 @@ export function ReaderApp() {
           setAction(a);
       }
     },
-    [manage.updateFeed, toggleSidebar],
+    [manage.updateFeed, toggleSidebar, closePeek],
   );
   const dialogsOpen = importOpen || helpOpen || action !== null;
 
@@ -290,14 +301,17 @@ export function ReaderApp() {
           : "grid-cols-1 lg:grid-cols-[24rem_minmax(0,1fr)]",
       )}
     >
-      {(sidebarColumn || (!isLarge && drawerOpen)) && (
+      {(sidebarColumn || (!isLarge && drawerOpen) || peeking) && (
         <div
+          ref={peekRef}
           className={cn(
             "min-h-0",
             !sidebarColumn && "fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] shadow-xl",
+            peeking && "animate-in slide-in-from-left w-64 duration-150",
           )}
         >
           <Sidebar
+            peeking={peeking}
             tree={tree.data}
             view={view}
             onSelect={selectView}
@@ -331,6 +345,7 @@ export function ReaderApp() {
           notice={feedNotice}
           refreshing={refreshFeed.isPending || sync.isPending}
           onShowSidebar={sidebarColumn ? undefined : toggleSidebar}
+          showSidebarProps={peekTriggerProps}
         />
       </div>
       <div className={cn("min-h-0", !articleId && "hidden lg:block")}>

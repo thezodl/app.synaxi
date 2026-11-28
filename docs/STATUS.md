@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-11-27. Update this file whenever work lands or an open item changes.
+Last updated: 2026-11-28. Update this file whenever work lands or an open item changes.
 
 ## Shipped
 
@@ -87,7 +87,11 @@ UX tweaks (after first use):
 - **Fix:** a 304 Not Modified crashed the fetch path under Node (see the commit), so every feed failed after
   its first sync. Error labels are now specific (Host not found, TLS error, …).
 
-Still to check in a browser: menus and dialogs, carousel/lightbox on a gallery-heavy post, typography
+- **Theme:** "…" menu → Theme → Light / Dark / System (default). Stored per browser in localStorage
+  (`synaxi:theme`) and applied by an inline `<head>` script before paint, so there's no flash. Dark mode is now
+  the `.dark` class on `<html>` rather than a media query; the browser theme-color and toasts follow it.
+
+Still to check in a browser: the theme submenu, menus and dialogs, carousel/lightbox on a gallery-heavy post, typography
 changes, the export file opening in another reader.
 
 ## Then

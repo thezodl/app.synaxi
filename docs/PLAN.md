@@ -30,7 +30,7 @@ Feeds come from the same Feedly OPML export (Feedly's API is Enterprise-only, so
 | Data access      | **Client components → `/api/*`** via TanStack Query. Server components only render the shell        |
 | Feed URL secrets | **App-level AES-256-GCM encryption**; DB holds ciphertext + HMAC for uniqueness                     |
 | Devices          | **Desktop browser** first (it should still work at narrow widths, but isn't optimised for them)     |
-| UI               | **Tailwind + shadcn/ui**; **system light/dark** only (no theme setting)                             |
+| UI               | **Tailwind + shadcn/ui**; light/dark/**system** (default) theme, chosen per browser in the menu     |
 | Reader           | Server-sanitised HTML rendered **inline in a div**, with a strict CSP                               |
 | Images           | **Loaded directly from the origin** (https-upgraded); no proxy                                      |
 | IDs              | **UUIDv7** primary keys                                                                             |
@@ -66,7 +66,7 @@ From the mobile backlog:
   view-original toggle.
 - **Keyboard shortcuts** (new; desktop only).
 
-Out of v1: offline reading, search, theme toggle/AMOLED, mobile sync, background fetching.
+Out of v1: offline reading, search, AMOLED theme, mobile sync, background fetching.
 
 ## Verified platform limits (checked 2026-11-27)
 

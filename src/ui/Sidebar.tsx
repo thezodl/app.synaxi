@@ -14,6 +14,10 @@ import {
   Folder,
   Inbox,
   LogOut,
+  Monitor,
+  Moon,
+  Sun,
+  SunMoon,
   RefreshCw,
   Upload,
 } from "lucide-react";
@@ -21,6 +25,8 @@ import { useState, type ReactNode } from "react";
 
 import type { FeedDto, FolderDto, Tree } from "@/client/hooks";
 import { relativeTime } from "@/client/format";
+import { useThemePref } from "@/client/theme";
+import type { ThemePref } from "@/client/themeScript";
 import { viewKey, type View } from "@/core/views";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +34,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -65,6 +73,30 @@ function RowMenu({ label, children }: { label: string; children: ReactNode }) {
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function ThemeMenu() {
+  const [pref, setPref] = useThemePref();
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <SunMoon /> Theme
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="w-36">
+        <DropdownMenuRadioGroup value={pref} onValueChange={(v) => setPref(v as ThemePref)}>
+          <DropdownMenuRadioItem value="light">
+            <Sun /> Light
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark">
+            <Moon /> Dark
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">
+            <Monitor /> System
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 
@@ -276,6 +308,7 @@ export function Sidebar({
             <DropdownMenuItem onClick={() => onAction({ kind: "shortcuts" })}>
               <Keyboard /> Keyboard shortcuts
             </DropdownMenuItem>
+            <ThemeMenu />
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onAction({ kind: "logout" })}>
               <LogOut /> Log out

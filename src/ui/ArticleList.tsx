@@ -85,11 +85,14 @@ export function ArticleList({
   notice,
   refreshing,
   onShowSidebar,
+  showSidebarProps,
 }: {
   notice?: string | null;
   refreshing?: boolean;
   /** Shown when the sidebar is hidden (collapsed, or a drawer on small screens). */
   onShowSidebar?: () => void;
+  /** Extra handlers for the show-sidebar button (hover to peek). */
+  showSidebarProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
   title: string;
   items: ArticleListItem[];
   selectedId: string | null;
@@ -118,6 +121,7 @@ export function ArticleList({
         {onShowSidebar && (
           <button
             type="button"
+            {...showSidebarProps}
             onClick={onShowSidebar}
             title="Show sidebar ([)"
             className="hover:bg-muted rounded-md p-1.5"

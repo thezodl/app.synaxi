@@ -7,6 +7,7 @@ import {
   Keyboard,
   MoreHorizontal,
   PanelLeftClose,
+  Pin,
   Plus,
   CalendarDays,
   ChevronRight,
@@ -239,7 +240,10 @@ export function Sidebar({
   onSync,
   syncing,
   onAction,
+  peeking = false,
 }: {
+  /** Shown as a hover overlay: the header button pins it instead of hiding it. */
+  peeking?: boolean;
   tree: Tree | undefined;
   view: View;
   onSelect: (v: View) => void;
@@ -267,11 +271,11 @@ export function Sidebar({
         <button
           type="button"
           onClick={() => onAction({ kind: "collapse" })}
-          title="Hide sidebar ([)"
+          title={peeking ? "Pin sidebar ([)" : "Hide sidebar ([)"}
           className="hover:bg-sidebar-accent rounded-md p-1.5"
         >
-          <PanelLeftClose className="size-4" />
-          <span className="sr-only">Hide sidebar</span>
+          {peeking ? <Pin className="size-4" /> : <PanelLeftClose className="size-4" />}
+          <span className="sr-only">{peeking ? "Pin sidebar" : "Hide sidebar"}</span>
         </button>
         <span className="flex-1 px-1 font-semibold tracking-tight">Synaxi</span>
         <button
